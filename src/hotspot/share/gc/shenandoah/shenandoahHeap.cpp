@@ -1005,7 +1005,7 @@ HeapWord* ShenandoahHeap::allocate_memory_under_lock(ShenandoahAllocRequest& req
   // We cannot block for safepoint for GC allocations, because there is a high chance
   // we are already running at safepoint or from stack watermark machinery, and we cannot
   // block again.
-  ShenandoahHeapLocker locker(lock(), req.is_mutator_alloc());
+  ShenandoahHeapLocker locker(lock());
   return _free_set->allocate(req, in_new_region);
 }
 
