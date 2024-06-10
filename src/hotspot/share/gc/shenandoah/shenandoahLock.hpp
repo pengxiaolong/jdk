@@ -32,17 +32,16 @@
 
 class ShenandoahLock  {
 private:
-  enum LockState { unlocked = 0, locked = 1 };
-
+  static const int locked = 1;
+  static const int unlocked  = 0;
   shenandoah_padding(0);
-  volatile LockState _state;
+  volatile int _state;
   shenandoah_padding(1);
   volatile Thread* _owner;
   shenandoah_padding(2);
 
   template<bool ALLOW_BLOCK>
   void contended_lock_internal_java_thread(JavaThread* java_thread);
-  void contended_lock_internal_vm_thread();
 
 public:
   ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
