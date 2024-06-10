@@ -46,7 +46,7 @@ void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
 }
 
 void ShenandoahLock::contended_lock_internal_vm_thread() {
-  assert(Thread::current()->is_VM_thread(), "Only VM Thread.");	
+  assert(!Thread::current()->is_Java_thread(), "Can't be Thread.");
   while (_state == locked ||
       Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
     SpinPause();
