@@ -41,7 +41,8 @@ private:
   shenandoah_padding(2);
 
   template<bool ALLOW_BLOCK>
-  void contended_lock_internal(JavaThread* java_thread);
+  void contended_lock_internal_java_thread(JavaThread* java_thread);
+  void contended_lock_internal_vm_thread();
 
 public:
   ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
