@@ -36,26 +36,29 @@ void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
   Thread* thread = Thread::current();
   if (thread->is_Java_thread()) {
     if (allow_block_for_safepoint) {
-      contended_lock_internal_java_thread<true>(JavaThread::cast(thread));
+      contended_lock_internal<true>(JavaThread::cast(thread));
     } else {
-      contended_lock_internal_java_thread<false>(JavaThread::cast(thread));
+      contended_lock_internal<false>(JavaThread::cast(thread));
     }
   } else {
-    contended_lock_internal_vm_thread();
+
+    contended_lock_internal_non_java_thread();
   }
 }
 
-void ShenandoahLock::contended_lock_internal_vm_thread() {
-  assert(!Thread::current()->is_Java_thread(), "Can't be Thread.");
-  while (_state == locked ||
-      Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
-    SpinPause();
+void ShenandoahLock::contended_lock_internal_non_java_thread() {
+  assert(!Thread::current()->is_Java_thread(), "Can't be Java Thread.");
+  while (_state == locked || Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
+    if (os::is_MP()) {
+      SpinPause();
+    } else {
+      os::naked_yield();
+    }
   }
 }
-
 
 template<bool ALLOW_BLOCK>
-void ShenandoahLock::contended_lock_internal_java_thread(JavaThread* java_thread) {
+void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
   int ctr = 0;
   while (_state == locked ||
       Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
