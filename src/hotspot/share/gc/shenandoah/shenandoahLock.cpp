@@ -41,10 +41,18 @@ void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
       contended_lock_internal_java_thread<false>(JavaThread::cast(thread));
     }
   } else {
-    //For non java thread, the strategy in Thread::SpinAcquire seems to be good enough.
-    Thread::SpinAcquire(&_state, "Shenandoah Heap Lock");
+    contended_lock_internal_vm_thread();
   }
 }
+
+void ShenandoahLock::contended_lock_internal_vm_thread() {
+  assert(!Thread::current()->is_Java_thread(), "Can't be Thread.");
+  while (_state == locked ||
+      Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
+    SpinPause();
+  }
+}
+
 
 template<bool ALLOW_BLOCK>
 void ShenandoahLock::contended_lock_internal_java_thread(JavaThread* java_thread) {
@@ -52,8 +60,8 @@ void ShenandoahLock::contended_lock_internal_java_thread(JavaThread* java_thread
   while (_state == locked ||
       Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
     if (ctr < 0x1F && !SafepointSynchronize::is_synchronizing()  && os::is_MP()) {
-      // Spin a little if there are multiple processors and SP is not been called.
-      // Swiching context from yield is generally is more expensive than spin pause. 
+      // Lightly contended, Spin a little if there are multiple processors,
+      // there is no point in spinning and not giving up on CPU if there is single CPU processor.
       ctr++;
       SpinPause();
     } else if (ALLOW_BLOCK) {
