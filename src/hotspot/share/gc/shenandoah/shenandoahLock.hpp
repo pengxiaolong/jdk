@@ -41,12 +41,14 @@ private:
   shenandoah_padding(2);
 
   template<bool ALLOW_BLOCK>
-  void contended_lock_internal(JavaThread* java_thread);
-  void contended_lock_internal_non_java_thread();
+  void contended_lock_internal(JavaThread* java_thread, int &attempts);
+  void contended_lock_internal_non_java_thread(int &attempts);
 
 public:
   ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
 
+  void lock(bool allow_block_for_safepoint);
+/*  
   void lock(bool allow_block_for_safepoint) {
     assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
 
@@ -59,15 +61,16 @@ public:
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
     DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
   }
-
-  void unlock() {
+*/
+  void unlock(); /*{
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
     OrderAccess::fence();
     Atomic::store(&_state, unlocked);
-  }
+    log_info(gc)("ShenandoahLock::unlock");
+  }*/
 
-  void contended_lock(bool allow_block_for_safepoint);
+  void contended_lock(bool allow_block_for_safepoint, int &attempts);
 
   bool owned_by_self() {
 #ifdef ASSERT

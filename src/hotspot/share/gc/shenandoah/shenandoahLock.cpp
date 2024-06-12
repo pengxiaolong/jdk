@@ -32,49 +32,92 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/os.inline.hpp"
 
-void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
+  void ShenandoahLock::lock(bool allow_block_for_safepoint) {
+    assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
+
+    int attempts = 1;
+    // Try to lock fast, or dive into contended lock handling.
+    if (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
+      contended_lock(allow_block_for_safepoint, attempts);
+    }
+    log_info(gc)("ShenandoahLock::lock, JavaThread: %i,allow block:%i, attempts:%i", Thread::current()->is_Java_thread(), allow_block_for_safepoint, attempts);
+    assert(Atomic::load(&_state) == locked, "must be locked");
+    assert(Atomic::load(&_owner) == nullptr, "must not be owned");
+    DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
+  }
+
+
+void ShenandoahLock::unlock() {
+    assert(Atomic::load(&_owner) == Thread::current(), "sanity");
+    DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
+    log_info(gc)("ShenandoahLock::unlock, javaThread: %i", Thread::current()->is_Java_thread());
+    OrderAccess::fence();
+    Atomic::store(&_state, unlocked);
+}
+
+void ShenandoahLock::contended_lock(bool allow_block_for_safepoint, int &attempts) {
   Thread* thread = Thread::current();
-  if (thread->is_Java_thread()) {
+  if ( thread->is_Java_thread()) {
     if (allow_block_for_safepoint) {
-      contended_lock_internal<true>(JavaThread::cast(thread));
+      contended_lock_internal<true>(JavaThread::cast(thread), attempts);
     } else {
-      contended_lock_internal<false>(JavaThread::cast(thread));
+      contended_lock_internal<false>(JavaThread::cast(thread), attempts);
     }
   } else {
-
-    contended_lock_internal_non_java_thread();
+    contended_lock_internal_non_java_thread(attempts);
   }
 }
 
-void ShenandoahLock::contended_lock_internal_non_java_thread() {
+void ShenandoahLock::contended_lock_internal_non_java_thread(int &attempts) {
   assert(!Thread::current()->is_Java_thread(), "Can't be Java Thread.");
+  int ctr = 0;
+  int yields = 0;
   while (_state == locked || Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
-    if (os::is_MP()) {
+    attempts++;
+    if (SafepointSynchronize::is_at_safepoint() || SafepointSynchronize::is_synchronizing() 
+        || (os::is_MP() && (ctr++ & 0x3FF) != 0)) {
       SpinPause();
     } else {
-      os::naked_yield();
+      if(yields < 5) {
+        os::naked_yield();
+        yields ++;
+      } else {
+        os::naked_short_sleep(1);
+      }
     }
   }
 }
 
 template<bool ALLOW_BLOCK>
-void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
-  int ctr = 0;
+void ShenandoahLock::contended_lock_internal(JavaThread* java_thread, int &attempts) {
+  int ctr = os::is_MP() ? 0xF : 0;
+  int afterTBIVMYields = 0;
   while (_state == locked ||
       Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
-    if (ctr < 0x1F && !SafepointSynchronize::is_synchronizing()  && os::is_MP()) {
+    attempts ++;
+    if (ctr >0 && !SafepointMechanism::local_poll_armed(java_thread)) {
+    //if (ctr > 0 && !SafepointSynchronize::is_synchronizing()) {
       // Lightly contended, Spin a little if there are multiple processors,
       // there is no point in spinning and not giving up on CPU if there is single CPU processor.
-      ctr++;
+      ctr--;
       SpinPause();
     } else if (ALLOW_BLOCK) {
-      // Notify VM we are blocking, and suspend if safepoint was announced
-      // while we were backing off.
-      ThreadBlockInVM block(java_thread, true);
-      os::naked_yield();
+      //if (SafepointSynchronize::is_synchronizing()) {
+      if (SafepointMechanism::local_poll_armed(java_thread)) { 
+       // Notify VM we are blocking, and suspend if safepoint was announced
+        // while we were backing off.
+        ThreadBlockInVM block(java_thread, true);
+	os::naked_yield();
+	afterTBIVMYields ++;
+      } else {
+        os::naked_short_sleep(1);
+      }
     } else {
-      os::naked_yield();
+      os::naked_short_sleep(1);
     }
+  }
+  if(afterTBIVMYields != 0) {
+    log_info(gc)("ShenandoahLock::contended_lock_internal, afterTBIVMYields: %i", afterTBIVMYields);
   }
 }
 
