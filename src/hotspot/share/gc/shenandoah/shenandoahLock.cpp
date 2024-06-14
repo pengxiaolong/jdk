@@ -69,11 +69,11 @@ void ShenandoahLock::contended_lock_internal(Thread* thread) {
       //yield to safepoint call to so VM will reach safepoint faster.
       ThreadBlockInVM block(JavaThread::cast(thread), true);
     } else {
-      if ((++yield_ctr & 0xFF) == 0) {
+      if ((++yield_ctr & 0x7F) == 0) {
 #ifdef _WINDOWS
         os::naked_short_sleep(1);
 #else
-        os::naked_short_nanosleep(1000);
+        os::naked_short_nanosleep(10000);
 #endif 
       } else {
         os::naked_yield();
