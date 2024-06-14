@@ -25,51 +25,36 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHLOCK_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHLOCK_HPP
 
-#include "gc/shenandoah/shenandoahPadding.hpp"
 #include "memory/allocation.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/safepoint.hpp"
+#include "gc/shenandoah/shenandoahLock_generic.hpp"
 
-class ShenandoahLock  {
+#if defined(LINUX)
+#include "gc/shenandoah/shenandoahLock_linux.hpp"
+typedef LinuxShenandoahLock ShenandoahLockDefault;
+#else
+typedef GenericShenandoahLock ShenandoahLockDefault;
+#endif
+
+template <typename ShenandoahLockImpl>
+class ShenandoahLockType  {
 private:
-  enum LockState { unlocked = 0, locked = 1 };
-
-  shenandoah_padding(0);
-  volatile LockState _state;
-  shenandoah_padding(1);
-  volatile Thread* _owner;
-  shenandoah_padding(2);
-
-  template<bool ALLOW_BLOC, uint32_t MAX_SPINS>
-  void contended_lock_internal(Thread* thread);
+  ShenandoahLockImpl _impl;
 public:
-  ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
+  ShenandoahLockType() : _impl() {};
 
   void lock(bool allow_block_for_safepoint) {
-    assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
-
-    // Try to lock fast, or dive into contended lock handling.
-    if (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
-      contended_lock(allow_block_for_safepoint);
-    }
-
-    assert(Atomic::load(&_state) == locked, "must be locked");
-    assert(Atomic::load(&_owner) == nullptr, "must not be owned");
-    DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
+    _impl.lock(allow_block_for_safepoint);
   }
 
   void unlock() {
-    assert(Atomic::load(&_owner) == Thread::current(), "sanity");
-    DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
-    OrderAccess::fence();
-    Atomic::store(&_state, unlocked);
+    _impl.unlock();
   }
-
-  void contended_lock(bool allow_block_for_safepoint);
 
   bool owned_by_self() {
 #ifdef ASSERT
-    return _state == locked && _owner == Thread::current();
+    return _impl.owned_by_self();
 #else
     ShouldNotReachHere();
     return false;
@@ -77,9 +62,11 @@ public:
   }
 };
 
+typedef ShenandoahLockType<ShenandoahLockDefault> ShenandoahLock;
+
 class ShenandoahLocker : public StackObj {
 private:
-  ShenandoahLock* const _lock;
+  ShenandoahLock* _lock;
 public:
   ShenandoahLocker(ShenandoahLock* lock, bool allow_block_for_safepoint = false) : _lock(lock) {
     if (_lock != nullptr) {

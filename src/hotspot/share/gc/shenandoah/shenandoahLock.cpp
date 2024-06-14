@@ -32,56 +32,6 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/os.inline.hpp"
 
-void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
-  Thread* thread = Thread::current();
-  if (thread->is_Java_thread()) {
-    //Java threads spin a little before yielding and potentially blocking.
-    constexpr uint32_t SPINS = 0x1F;
-    if (allow_block_for_safepoint) {
-      contended_lock_internal<true, SPINS>(thread);
-    } else {
-      contended_lock_internal<false, SPINS>(thread);
-    }
-  } else {
-    // Non-Java threads are not allowed to block, and they spin hard
-    // to progress quickly. The normal number of GC threads is low enough
-    // for this not to have detrimental effect. This favors GC threads
-    // a little over Java threads, which is good for GC progress under
-    // extreme contention.
-    contended_lock_internal<false, 0xFFF>(thread);
-  }
-}
-
-
-template<bool ALLOW_BLOCK, uint32_t MAX_SPINS>
-void ShenandoahLock::contended_lock_internal(Thread* thread) {
-  assert(!ALLOW_BLOCK || thread->is_Java_thread(), "Must be a Java thread when allow block.");
-  uint32_t ctr = os::is_MP() ? MAX_SPINS : 0; //Do not spin on single processor.
-  uint32_t yield_ctr = 0;
-  while (Atomic::load(&_state) == locked ||
-      Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
-    if (ctr > 0 && !SafepointSynchronize::is_synchronizing()) {
-      // Lightly contended, spin a little if SP it NOT synchronizing.
-      SpinPause();
-      ctr--;
-    } else if (ALLOW_BLOCK && SafepointSynchronize::is_synchronizing()) {
-      //We know SP is synchronizing and block is allosed,
-      //yield to safepoint call to so VM will reach safepoint faster.
-      ThreadBlockInVM block(JavaThread::cast(thread), true);
-    } else {
-      if ((++yield_ctr & 0x7F) == 0) {
-#ifdef _WINDOWS
-        os::naked_short_sleep(1);
-#else
-        os::naked_short_nanosleep(10000);
-#endif 
-      } else {
-        os::naked_yield();
-      }
-    }
-  }
-}
-
 ShenandoahSimpleLock::ShenandoahSimpleLock() {
   assert(os::mutex_init_done(), "Too early!");
 }
