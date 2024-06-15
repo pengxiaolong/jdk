@@ -53,16 +53,17 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     Thread* thread = Thread::current();
     assert(Atomic::load(&_owner) != thread, "reentrant locking attempt, would deadlock");
     // Try fast lock
-    uint32_t current = tryFastLock(32);
+    uint32_t current = tryFastLock(1);
     // When fast lock fails dive into contented lock.
     if (current != unlocked) {
         // Set lock state to contended if locked by others.
-        if (Atomic::load(&_state) == locked)
-            current = Atomic::xchg(&_state, contended);
+        Atomic::cmpxchg(&_state, locked, contended);
+        Atomic::add(&_contenders, 1);
         while (current != unlocked) {
             futex_wait(&_state, contended);
             current = Atomic::xchg(&_state, contended);
         }
+        Atomic::add(&_contenders, -1);
     }
     assert(Atomic::load(&_state) != unlocked, "must not be unlocked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
@@ -73,23 +74,17 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
 void LinuxShenandoahLock::unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
-    OrderAccess::fence();
-    bool wake_up_some_one = false;
-    if(Atomic::xchg(&_state, unlocked) == contended && os::is_MP()) {
-        //Some threads are waiting, should be have been woken up after lock sate change,
-        // now spin a little bit and hope some thread get the lock.
-        int i = 64;
-        while(i-- > 0) { 
-            if(Atomic::load(&_state) != unlocked) {
-                if (Atomic::cmpxchg(&_state, locked, contended) == locked) {
-                    break;
-                }
+    OrderAccess::fence();    
+    Atomic::xchg(&_state, unlocked);
+    if (Atomic::load(&_contenders) > 0){
+        if (os::is_MP()){
+            if (Atomic::load(&_state) != unlocked) {
+                Atomic::cmpxchg(&_state, locked, contended);
+            } else {
+                futex_wake(&_state, 1);
             }
-            SpinPause();
+        } else {
+            futex_wake(&_state, 1);
         }
-        wake_up_some_one = i < 0;
-    }
-    if (wake_up_some_one) {
-        futex_wake(&_state, 1);
     }
 }
