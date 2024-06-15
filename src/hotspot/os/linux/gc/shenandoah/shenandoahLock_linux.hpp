@@ -47,7 +47,7 @@ private:
   }
 
 public:
-  LinuxShenandoahLock() : _state(0), _owner(nullptr), __contenders(0) {};
+  LinuxShenandoahLock() : _state(0), _owner(nullptr), _contenders(0) {};
   void lock(bool allow_block_for_safepoint);
   void unlock();
   bool owned_by_self() {
