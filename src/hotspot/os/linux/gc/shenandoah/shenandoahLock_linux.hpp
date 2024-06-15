@@ -26,7 +26,6 @@
 
 #include "runtime/os.hpp"
 #include "runtime/atomic.hpp"
-#include "runtime/interfaceSupport.inline.hpp"
 
 class LinuxShenandoahLock {
 private:
