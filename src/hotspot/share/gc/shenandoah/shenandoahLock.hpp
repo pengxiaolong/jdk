@@ -28,12 +28,12 @@
 #include "memory/allocation.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/safepoint.hpp"
-#include "gc/shenandoah/shenandoahLock_generic.hpp"
 
 #if defined(LINUX)
 #include "gc/shenandoah/shenandoahLock_linux.hpp"
 typedef LinuxShenandoahLock ShenandoahLockDefault;
 #else
+#include "gc/shenandoah/shenandoahLock_generic.hpp"
 typedef GenericShenandoahLock ShenandoahLockDefault;
 #endif
 

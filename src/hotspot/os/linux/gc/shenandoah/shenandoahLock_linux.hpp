@@ -25,6 +25,8 @@
 #define OS_LINUX_GC_SHENANDOAH_SHENANDOAHLOCK_LINUX_HPP
 
 #include "runtime/os.hpp"
+#include "runtime/atomic.hpp"
+#include "runtime/interfaceSupport.inline.hpp"
 
 class LinuxShenandoahLock {
 private:
@@ -36,7 +38,7 @@ private:
 
   uint32_t tryFastLock(int max_attempts) {
     uint32_t current;
-    int ctr = max_attempts;
+    int ctr = os::is_MP() ? max_attempts : 0; //Only try cmpxchg once w/o spin when there is one processor.
     while((current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked && ctr-- > 0) {
       SpinPause();
     }

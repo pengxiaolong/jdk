@@ -22,13 +22,14 @@
  */
 
 #include "precompiled.hpp"
+
+#include "shenandoahLock_linux.hpp"
+#include "runtime/orderAccess.hpp"
+#include "runtime/os.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
-#include "runtime/orderAccess.hpp"
-#include "utilities/debug.hpp"
 #include <sys/syscall.h>
 #include <linux/futex.h>
-#include "shenandoahLock_linux.hpp"
 
 // 32-bit RISC-V has no SYS_futex syscall.
 #ifdef RISCV32
@@ -74,7 +75,7 @@ void LinuxShenandoahLock::unlock() {
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
     OrderAccess::fence();
     bool wake_up_some_one = false;
-    if(Atomic::xchg(&_state, unlocked) == contended) {
+    if(Atomic::xchg(&_state, unlocked) == contended && os::is_MP()) {
         //Some threads are waiting, should be have been woken up after lock sate change,
         // now spin a little bit and hope some thread get the lock.
         int i = 64;

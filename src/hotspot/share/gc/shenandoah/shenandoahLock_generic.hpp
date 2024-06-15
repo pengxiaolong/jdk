@@ -27,6 +27,7 @@
 
 #include "runtime/os.hpp"
 #include "runtime/atomic.hpp"
+#include "runtime/javaThread.hpp"
 
 class GenericShenandoahLock {
 private:

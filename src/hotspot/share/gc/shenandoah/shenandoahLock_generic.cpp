@@ -23,14 +23,12 @@
  */
 
 #include "precompiled.hpp"
-
+#include "shenandoahLock_generic.hpp"
 #include "runtime/os.hpp"
-
-#include "gc/shenandoah/shenandoahLock_generic.hpp"
 #include "runtime/atomic.hpp"
-#include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/javaThread.hpp"
-#include "runtime/os.inline.hpp"
+#include "runtime/interfaceSupport.inline.hpp"
+
 
 void GenericShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
   Thread* thread = Thread::current();
