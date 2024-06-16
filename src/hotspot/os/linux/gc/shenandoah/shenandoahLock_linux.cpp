@@ -53,7 +53,15 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     Thread* thread = Thread::current();
     assert(Atomic::load(&_owner) != thread, "reentrant locking attempt, would deadlock");
     // Try fast lock
-    uint32_t current = tryFastLock(1);
+    uint32_t current;
+    int remaining_attempts = os::is_MP() ? 32 : 1; //Only try cmpxchg once w/o spin when there is one processor.
+    while((current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked && --remaining_attempts > 0) {
+        if( Atomic::load(&_contenders) > remaining_attempts) {
+            //Stop trying fast lock if _contenders is more than remaining attempts
+            break;
+        }
+        SpinPause();
+    }
     // When fast lock fails dive into contented lock.
     if (current != unlocked) {
         // Set lock state to contended if locked by others.
@@ -76,14 +84,21 @@ void LinuxShenandoahLock::unlock() {
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
     OrderAccess::fence();    
     Atomic::xchg(&_state, unlocked);
-    if (Atomic::load(&_contenders) > 0){
-        if (os::is_MP()){
-            if (Atomic::load(&_state) != unlocked) {
+
+    if (Atomic::load(&_contenders) > 0) {
+        bool wake_contender = true;
+        int i = os::is_MP() ? 8 : 0;
+        while (i-- > 0 && Atomic::load(&_contenders) > 0) {
+            if(Atomic::load(&_state) == unlocked) {
+                SpinPause();
+            } 
+            if(Atomic::load(&_state) != unlocked) {
                 Atomic::cmpxchg(&_state, locked, contended);
-            } else {
-                futex_wake(&_state, 1);
+                wake_contender = false;
+                break;
             }
-        } else {
+        }
+        if (wake_contender) {
             futex_wake(&_state, 1);
         }
     }

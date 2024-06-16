@@ -36,16 +36,6 @@ private:
   volatile Thread* _owner;
   volatile int _contenders;
 
-  uint32_t tryFastLock(int max_attempts) {
-    assert(max_attempts > 0, "max_attempts must be greater than 0.");
-    int ctr = os::is_MP() ? max_attempts : 1; //Only try cmpxchg once w/o spin when there is one processor.
-    uint32_t current;
-    while((current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked && --ctr > 0) {
-      SpinPause();
-    }
-    return current;
-  }
-
 public:
   LinuxShenandoahLock() : _state(0), _owner(nullptr), _contenders(0) {};
   void lock(bool allow_block_for_safepoint);
