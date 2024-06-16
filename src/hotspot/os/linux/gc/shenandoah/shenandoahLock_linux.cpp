@@ -55,7 +55,8 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     // Try fast lock
     uint32_t current;
     int remaining_attempts = os::is_MP() ? 32 : 1; //Only try cmpxchg once w/o spin when there is one processor.
-    while((current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked && --remaining_attempts > 0) {
+    while (((current = Atomic::load(&_state)) != unlocked || (current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked)
+      && --remaining_attempts > 0) {
         if (Atomic::load(&_contenders) > remaining_attempts) {
             //Stop trying fast lock if _contenders is more than remaining attempts
             break;
