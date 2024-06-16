@@ -26,8 +26,11 @@
 #define SHARE_GC_SHENANDOAH_SHENANDOAHLOCK_HPP
 
 #include "memory/allocation.hpp"
+#include "runtime/thread.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/safepoint.hpp"
+#include "runtime/os.hpp"
+
 
 #if defined(LINUX)
 #include "gc/shenandoah/shenandoahLock_linux.hpp"
@@ -41,15 +44,25 @@ template <typename ShenandoahLockImpl>
 class ShenandoahLockType  {
 private:
   ShenandoahLockImpl _impl;
+  jlong acquire;
+  jlong acquired;
+  jlong released;
 public:
-  ShenandoahLockType() : _impl() {};
+  ShenandoahLockType() : _impl(), acquire(0), acquired(0), released(0) {};
 
   void lock(bool allow_block_for_safepoint) {
+    acquire = os::javaTimeNanos();
     _impl.lock(allow_block_for_safepoint);
+    acquired = os::javaTimeNanos();
   }
 
   void unlock() {
+    released = os::javaTimeNanos();
     _impl.unlock();
+    Thread* thread = Thread::current();
+    const char* name = thread->is_Java_thread() ? "Java thread" : thread->name();
+    log_info(gc)("ShenandoahLock has been unlocked (" PTR_FORMAT ") by %s (" PTR_FORMAT "), took " JLONG_FORMAT " ns to acquire, holded for " JLONG_FORMAT " ns.",
+                   p2i(this), name, p2i(thread), (acquired - acquire), (released - acquired));
   }
 
   bool owned_by_self() {
