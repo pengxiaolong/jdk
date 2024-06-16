@@ -30,7 +30,7 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/safepoint.hpp"
 #include "runtime/os.hpp"
-
+#include "logging/log.hpp"
 
 #if defined(LINUX)
 #include "gc/shenandoah/shenandoahLock_linux.hpp"
@@ -58,11 +58,11 @@ public:
 
   void unlock() {
     released = os::javaTimeNanos();
-    _impl.unlock();
     Thread* thread = Thread::current();
     const char* name = thread->is_Java_thread() ? "Java thread" : thread->name();
-    log_info(gc)("ShenandoahLock has been unlocked (" PTR_FORMAT ") by %s (" PTR_FORMAT "), took " JLONG_FORMAT " ns to acquire, holded for " JLONG_FORMAT " ns.",
-                   p2i(this), name, p2i(thread), (acquired - acquire), (released - acquired));
+    log_info(gc)("ShenandoahLock (" PTR_FORMAT ") has been unlocked by %s (" PTR_FORMAT "). It took " JLONG_FORMAT " ns to acquire, has been held for " JLONG_FORMAT " ns.",
+                  p2i(this), name, p2i(thread), (acquired - acquire), (released - acquired));
+    _impl.unlock();
   }
 
   bool owned_by_self() {
