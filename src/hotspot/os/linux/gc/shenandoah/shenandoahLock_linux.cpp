@@ -39,7 +39,7 @@
 #endif
 
 //long syscall(SYS_futex, uint32_t *uaddr, int futex_op, uint32_t val,
-//    const struct timespec *timeout,  /*or: uint32_t val2 */
+//    const struct timespec *timeout,  <or: uint32_t val2>
 //    uint32_t *uaddr2, uint32_t val3);
 static long futex_wake(volatile uint32_t *addr, uint32_t val) {
   return syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, val, nullptr, nullptr, 0);
@@ -56,7 +56,7 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     uint32_t current;
     int remaining_attempts = os::is_MP() ? 32 : 1; //Only try cmpxchg once w/o spin when there is one processor.
     while((current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked && --remaining_attempts > 0) {
-        if( Atomic::load(&_contenders) > remaining_attempts) {
+        if (Atomic::load(&_contenders) > remaining_attempts) {
             //Stop trying fast lock if _contenders is more than remaining attempts
             break;
         }
@@ -82,17 +82,17 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
 void LinuxShenandoahLock::unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
-    OrderAccess::fence();    
+    OrderAccess::fence();
     Atomic::xchg(&_state, unlocked);
 
     if (Atomic::load(&_contenders) > 0) {
         bool wake_contender = true;
         int i = os::is_MP() ? 8 : 0;
         while (i-- > 0 && Atomic::load(&_contenders) > 0) {
-            if(Atomic::load(&_state) == unlocked) {
+            if (Atomic::load(&_state) == unlocked) {
                 SpinPause();
-            } 
-            if(Atomic::load(&_state) != unlocked) {
+	    }
+            if (Atomic::load(&_state) != unlocked) {
                 Atomic::cmpxchg(&_state, locked, contended);
                 wake_contender = false;
                 break;
@@ -103,3 +103,4 @@ void LinuxShenandoahLock::unlock() {
         }
     }
 }
+
