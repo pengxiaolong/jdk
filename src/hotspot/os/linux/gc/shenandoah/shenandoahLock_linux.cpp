@@ -52,27 +52,34 @@ static long futex_wait(volatile uint32_t *addr, uint32_t val) {
 void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     Thread* thread = Thread::current();
     assert(Atomic::load(&_owner) != thread, "reentrant locking attempt, would deadlock");
-    // Try fast lock
     uint32_t current;
-    int remaining_attempts = os::is_MP() ? 32 : 1; //Only try cmpxchg once w/o spin when there is one processor.
-    while (((current = Atomic::load(&_state)) != unlocked || (current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked)
-      && --remaining_attempts > 0) {
-        if (Atomic::load(&_contenders) > remaining_attempts) {
-            //Stop trying fast lock if _contenders is more than remaining attempts
-            break;
+    const int active_processor_count = os::active_processor_count();
+    for(;;) {
+        int remaining_attempts = os::is_MP() ? 32 : 1; //Only try cmpxchg once w/o spin when there is one processor.
+        while (((current = Atomic::load(&_state)) != unlocked || (current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked)
+          && --remaining_attempts > 0) {
+            if (Atomic::load(&_contenders) > active_processor_count) {
+                //Stop trying fast lock if _contenders is more than remaining attempts
+                break;
+            }
+            SpinPause();
         }
-        SpinPause();
-    }
-    // When fast lock fails dive into contented lock.
-    if (current != unlocked) {
-        // Set lock state to contended if locked by others.
-        Atomic::cmpxchg(&_state, locked, contended);
-        Atomic::add(&_contenders, 1);
-        while (current != unlocked) {
-            futex_wait(&_state, contended);
-            current = Atomic::xchg(&_state, contended);
+        if (current != unlocked) {
+            Atomic::add(&_contenders, 1);
+            // Set lock state to contended if locked by others.
+            Atomic::cmpxchg(&_state, locked, contended);
+            while (current != unlocked) {
+                if (Atomic::load(&_contenders) <= active_processor_count) {
+                    break;
+                }
+		futex_wait(&_state, contended);
+                current = Atomic::xchg(&_state, contended);
+	    }
+	    Atomic::add(&_contenders, -1);
         }
-        Atomic::add(&_contenders, -1);
+	if (current == unlocked) {
+	    break;
+	}
     }
     assert(Atomic::load(&_state) != unlocked, "must not be unlocked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
