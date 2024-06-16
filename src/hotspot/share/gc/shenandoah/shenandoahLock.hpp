@@ -44,25 +44,32 @@ template <typename ShenandoahLockImpl>
 class ShenandoahLockType  {
 private:
   ShenandoahLockImpl _impl;
-  jlong acquire;
   jlong acquired;
-  jlong released;
 public:
-  ShenandoahLockType() : _impl(), acquire(0), acquired(0), released(0) {};
+  ShenandoahLockType() : _impl(), acquired(0) {};
 
   void lock(bool allow_block_for_safepoint) {
-    acquire = os::javaTimeNanos();
+    jlong acquire = os::javaTimeNanos();
     _impl.lock(allow_block_for_safepoint);
     acquired = os::javaTimeNanos();
+    jlong took = acquired - acquire;
+    if (took > 1000) {
+      Thread* thread = Thread::current();
+      const char* name = thread->is_Java_thread() ? "Java thread" : thread->name();
+      log_info(gc)("ShenandoahLock (" PTR_FORMAT ") has been acquired by %s (" PTR_FORMAT "), took " JLONG_FORMAT " ns.",
+                    p2i(this), name, p2i(thread), (acquired - acquire));
+    }
   }
 
   void unlock() {
-    released = os::javaTimeNanos();
     Thread* thread = Thread::current();
+    jlong held = os::javaTimeNanos() - acquired;
     const char* name = thread->is_Java_thread() ? "Java thread" : thread->name();
-    log_info(gc)("ShenandoahLock (" PTR_FORMAT ") has been unlocked by %s (" PTR_FORMAT "). It took " JLONG_FORMAT " ns to acquire, has been held for " JLONG_FORMAT " ns.",
-                  p2i(this), name, p2i(thread), (acquired - acquire), (released - acquired));
     _impl.unlock();
+    if (held > 1000) {
+      log_info(gc)("ShenandoahLock (" PTR_FORMAT ") has been released by %s (" PTR_FORMAT "), has been held for " JLONG_FORMAT " ns.",
+                    p2i(this), name, p2i(thread), held);
+    }
   }
 
   bool owned_by_self() {
