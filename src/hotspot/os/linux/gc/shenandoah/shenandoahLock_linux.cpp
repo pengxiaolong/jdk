@@ -52,34 +52,28 @@ static long futex_wait(volatile uint32_t *addr, uint32_t val) {
 void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     Thread* thread = Thread::current();
     assert(Atomic::load(&_owner) != thread, "reentrant locking attempt, would deadlock");
-    uint32_t current;
-    const int active_processor_count = os::active_processor_count();
-    for(;;) {
-        int remaining_attempts = os::is_MP() ? 32 : 1; //Only try cmpxchg once w/o spin when there is one processor.
-        while (((current = Atomic::load(&_state)) != unlocked || (current = Atomic::cmpxchg(&_state, unlocked, locked)) != unlocked)
-          && --remaining_attempts > 0) {
-            if (Atomic::load(&_contenders) > active_processor_count) {
-                //Stop trying fast lock if _contenders is more than remaining attempts
-                break;
-            }
-            SpinPause();
-        }
-        if (current != unlocked) {
-            Atomic::add(&_contenders, 1);
+    // Try fast lock
+    uint32_t current = Atomic::cmpxchg(&_state, unlocked, locked);
+    if (current != unlocked) { // When fast lock fails dive into contented lock.
+        Atomic::add(&_contenders, 1);
+        if (!thread->is_Java_thread()) Atomic::add(&_vm_contenders, 1);
+        do {
             // Set lock state to contended if locked by others.
-            Atomic::cmpxchg(&_state, locked, contended);
-            while (current != unlocked) {
-                if (Atomic::load(&_contenders) <= active_processor_count) {
-                    break;
+            const uint32_t state = Atomic::cmpxchg(&_state, locked, contended);
+            if(state == locked || state == contended) {
+                futex_wait(&_state, contended);
+                if (SafepointSynchronize::is_at_safepoint() && thread->is_Java_thread()) {
+                    if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
+                    os::naked_yield();
+                } else {
+                    current = Atomic::xchg(&_state, contended);
                 }
-		futex_wait(&_state, contended);
-                current = Atomic::xchg(&_state, contended);
-	    }
-	    Atomic::add(&_contenders, -1);
-        }
-	if (current == unlocked) {
-	    break;
-	}
+            } else {
+                current = Atomic::cmpxchg(&_state, unlocked, contended);
+            }
+        } while(current != unlocked);
+        Atomic::add(&_contenders, -1);
+        if (!thread->is_Java_thread()) Atomic::add(&_vm_contenders, -1);
     }
     assert(Atomic::load(&_state) != unlocked, "must not be unlocked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
@@ -99,7 +93,7 @@ void LinuxShenandoahLock::unlock() {
         while (i-- > 0 && Atomic::load(&_contenders) > 0) {
             if (Atomic::load(&_state) == unlocked) {
                 SpinPause();
-	    }
+	        }
             if (Atomic::load(&_state) != unlocked) {
                 Atomic::cmpxchg(&_state, locked, contended);
                 wake_contender = false;

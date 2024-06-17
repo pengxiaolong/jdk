@@ -35,9 +35,10 @@ private:
   volatile uint32_t _state;
   volatile Thread* _owner;
   volatile int _contenders;
+  volatile int _vm_contenders;
 
 public:
-  LinuxShenandoahLock() : _state(0), _owner(nullptr), _contenders(0) {};
+  LinuxShenandoahLock() : _state(0), _owner(nullptr), _contenders(0), _vm_contenders(0) {};
   void lock(bool allow_block_for_safepoint);
   void unlock();
   bool owned_by_self() {
