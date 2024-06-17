@@ -74,17 +74,20 @@ void LinuxShenandoahLock::contended_lock(uint32_t &current) {
     if(IS_JAVA_THREAD) {
         do {
             const uint32_t state = Atomic::cmpxchg(&_state, locked, contended);
-            if(SafepointSynchronize::is_at_safepoint() || SafepointSynchronize::is_synchronizing()) {
+            if (SafepointSynchronize::is_synchronizing()) {
                 if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
-                if (Atomic::load(&_state) == contended) futex_wait(&_state, contended);
-                else {
-                    if (ALLOW_BLOCK) {
-                        ThreadBlockInVM(JavaThread::current(), true);
-                        os::naked_yield();
-                    } else {
+                if(ALLOW_BLOCK) {
+                    {
+                        ThreadBlockInVM block(JavaThread::current(), true);
                         os::naked_yield();
                     }
+                } else {
+                    os::naked_yield();
                 }
+            } else if(SafepointSynchronize::is_at_safepoint()) {
+                if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
+                if (Atomic::load(&_state) == contended) futex_wait(&_state, contended);
+                else os::naked_yield();
             } else {
                 if (state == locked || state == contended) {
                     futex_wait(&_state, contended);
