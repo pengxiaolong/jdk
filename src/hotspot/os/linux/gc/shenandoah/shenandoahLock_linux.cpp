@@ -55,30 +55,58 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     // Try fast lock
     uint32_t current = Atomic::cmpxchg(&_state, unlocked, locked);
     if (current != unlocked) { // When fast lock fails dive into contented lock.
-        Atomic::add(&_contenders, 1);
-        if (!thread->is_Java_thread()) Atomic::add(&_vm_contenders, 1);
-        do {
-            // Set lock state to contended if locked by others.
-            const uint32_t state = Atomic::cmpxchg(&_state, locked, contended);
-            if(state == locked || state == contended) {
-                futex_wait(&_state, contended);
-                if (SafepointSynchronize::is_at_safepoint() && thread->is_Java_thread()) {
-                    if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
-                    os::naked_yield();
-                } else {
-                    current = Atomic::xchg(&_state, contended);
-                }
-            } else {
-                current = Atomic::cmpxchg(&_state, unlocked, contended);
-            }
-        } while(current != unlocked);
-        Atomic::add(&_contenders, -1);
-        if (!thread->is_Java_thread()) Atomic::add(&_vm_contenders, -1);
+        if (thread->is_Java_thread()) {
+            if (allow_block_for_safepoint) contended_lock<true, true>(current);
+            else contended_lock<true, false>(current);
+        }
+        else contended_lock<false, false>(current);
     }
     assert(Atomic::load(&_state) != unlocked, "must not be unlocked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
     OrderAccess::fence();
     DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
+}
+
+template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
+void LinuxShenandoahLock::contended_lock(uint32_t &current) {
+    Atomic::add(&_contenders, 1);
+    if (!IS_JAVA_THREAD) Atomic::add(&_vm_contenders, 1);
+    if(IS_JAVA_THREAD) {
+        do {
+            const uint32_t state = Atomic::cmpxchg(&_state, locked, contended);
+            if(SafepointSynchronize::is_at_safepoint() || SafepointSynchronize::is_synchronizing()) {
+                if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
+                if (Atomic::load(&_state) == contended) futex_wait(&_state, contended);
+                else {
+                    if (ALLOW_BLOCK) {
+                        ThreadBlockInVM(JavaThread::current(), true);
+                        os::naked_yield();
+                    } else {
+                        os::naked_yield();
+                    }
+                }
+            } else {
+                if (state == locked || state == contended) {
+                    futex_wait(&_state, contended);
+                    current = Atomic::xchg(&_state, contended);
+                } else {
+                    current = Atomic::cmpxchg(&_state, unlocked, contended);
+                }
+            }
+        } while(current != unlocked);
+    } else {
+        do {
+            const uint32_t state = Atomic::cmpxchg(&_state, locked, contended);
+            if(state == locked || state == contended) {
+                futex_wait(&_state, contended);
+                current = Atomic::xchg(&_state, contended);
+            } else {
+                current = Atomic::cmpxchg(&_state, unlocked, contended);
+            }
+        } while(current != unlocked);
+    }
+    Atomic::add(&_contenders, -1);
+    if (!IS_JAVA_THREAD) Atomic::add(&_vm_contenders, -1);
 }
 
 void LinuxShenandoahLock::unlock() {
