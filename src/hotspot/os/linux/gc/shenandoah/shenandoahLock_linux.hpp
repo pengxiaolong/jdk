@@ -33,7 +33,7 @@ private:
   static const uint32_t locked  = 1;
   static const uint32_t contended = 2;
   volatile uint32_t _state;
-  volatile Thread* _owner;
+  Thread* volatile _owner;
   volatile int _contenders;
   volatile int _vm_contenders;
   
