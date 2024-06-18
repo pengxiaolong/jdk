@@ -118,24 +118,18 @@ void LinuxShenandoahLock::unlock() {
     OrderAccess::fence();
     Atomic::xchg(&_state, unlocked);
 
-    if (Atomic::load(&_contenders) > 0) {
-        bool wake_contender = true;
-        int i = Atomic::load(&_contenders);
-        if (os::is_MP()) i = 0;
-        else i = i > 64 ? 64 : i;
-        while (i-- > 0 && Atomic::load(&_contenders) > 0) {
-            if (Atomic::load(&_state) == unlocked) {
-                SpinPause();
-	    }
-            if (Atomic::load(&_state) != unlocked) {
-                Atomic::cmpxchg(&_state, locked, contended);
-                wake_contender = false;
-                break;
-            }
-        }
-        if (wake_contender && Atomic::load(&_contenders) > 0) {
-            futex_wake(&_state, 1);
-        }
+    bool wake_contender = true;
+    int i = os::is_MP() ? 64 : 0;
+    for( ; ; ) {
+      if(i <= 0) break;
+      if (Atomic::load(&_contenders) == 0) return;
+      if (Atomic::load(&_state) != unlocked) {
+          Atomic::cmpxchg(&_state, locked, contended);
+	  return;
+      }
+      SpinPause();
+      i--;
     }
+    if (Atomic::load(&_contenders) > 0) futex_wake(&_state, 1);
 }
 
