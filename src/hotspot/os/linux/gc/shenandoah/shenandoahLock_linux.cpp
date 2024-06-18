@@ -30,7 +30,6 @@
 #include "runtime/interfaceSupport.inline.hpp"
 #include <sys/syscall.h>
 #include <linux/futex.h>
-#include "shenandoahHeap.hpp"
 
 // 32-bit RISC-V has no SYS_futex syscall.
 #ifdef RISCV32
@@ -71,7 +70,6 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
 template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
 void LinuxShenandoahLock::contended_lock(uint32_t &current) {
     Atomic::add(&_contenders, 1);
-    if (!IS_JAVA_THREAD) Atomic::add(&_vm_contenders, 1);
     if(IS_JAVA_THREAD) {
         do {
             if (Atomic::cmpxchg(&_state, locked, contended) == unlocked) {
@@ -96,20 +94,21 @@ void LinuxShenandoahLock::contended_lock(uint32_t &current) {
             }
         } while (current != unlocked);
     } else {
+        Atomic::add(&_vm_contenders, 1);
         do {
             if (Atomic::cmpxchg(&_state, locked, contended) != unlocked) {
                 futex_wait(&_state, contended);
             }
             current = Atomic::xchg(&_state, contended);
         } while (current != unlocked);
+        Atomic::add(&_vm_contenders, -1);
     }
     Atomic::add(&_contenders, -1);
-    if (!IS_JAVA_THREAD) Atomic::add(&_vm_contenders, -1);
 }
 
 void LinuxShenandoahLock::unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
-    Atomic::store(&_owner, (Thread*)nullptr)
+    Atomic::store(&_owner, (Thread*)nullptr);
     OrderAccess::fence();
     Atomic::xchg(&_state, unlocked);
 
