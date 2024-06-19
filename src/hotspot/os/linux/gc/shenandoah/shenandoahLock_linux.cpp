@@ -46,8 +46,9 @@ static long futex_wake(volatile uint32_t *addr, uint32_t val) {
 }
 
 static long futex_wait(volatile uint32_t *addr, uint32_t val) {
+  struct timespec timeout;
   timeout.tv_sec = 0;
-  timeout.tv_nsec = 10000;
+  timeout.tv_nsec = 100000;
   return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, val, &timeout, nullptr, 0);
 }
 
@@ -107,6 +108,7 @@ void LinuxShenandoahLock::unlock() {
       Atomic::cmpxchg(&_state, locked, contended);
       return;
     }
+    if (SafepointSynchronize::is_synchronizing()) return;
     SpinPause();
     i--;
   }
