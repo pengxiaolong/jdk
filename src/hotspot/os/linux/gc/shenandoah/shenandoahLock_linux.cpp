@@ -67,6 +67,10 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
     OrderAccess::fence();
     Atomic::store(&_owner, Thread::current());
+    if(SafepointSynchronize::is_synchronizing()) {
+      const char* owner_name = thread -> is_Java_thread() ? "JavaThread" : thread->name();
+      log_info(gc)("%s (" PTR_FORMAT ") has acquired lock (" PTR_FORMAT ") during SP synchronizing", owner_name, p2i(thread), p2i(this));
+    }
 }
 
 template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
@@ -82,6 +86,11 @@ void LinuxShenandoahLock::contended_lock(uint32_t &current) {
         Atomic::add(&_contenders, 1);
         futex_wait(&_state, contended);
         Atomic::add(&_contenders, -1);
+        if (SafepointSynchronize::is_synchronizing()) {
+          Thread* owner = Atomic::load(&_owner);
+          const char* owner_name = owner == nullptr ? "Nobody" : (owner -> is_Java_thread() ? "JavaThread" : owner->name());
+          log_info(gc)("Java thread (" PTR_FORMAT ") has been woken up during SP synchronizing, lock (" PTR_FORMAT ") is held by %s (" PTR_FORMAT ")", p2i(JavaThread::current()), p2i(this), owner_name, p2i(owner));
+        }
       } else {
         Atomic::add(&_contenders, 1);
         futex_wait(&_state, contended);
@@ -98,6 +107,12 @@ void LinuxShenandoahLock::unlock() {
   Atomic::store(&_owner, (Thread*)nullptr);
   OrderAccess::fence();
   Atomic::xchg(&_state, unlocked);
+
+  Thread* thread = Thread::current();
+  if(SafepointSynchronize::is_synchronizing()) {
+    const char* owner_name = thread -> is_Java_thread() ? "JavaThread" : thread->name();
+    log_info(gc)("%s (" PTR_FORMAT ") has release lock (" PTR_FORMAT ") during SP synchronizing", owner_name, p2i(thread), p2i(this));
+  }
 
   int i = os::is_MP() ? Atomic::load(&_contenders) : 0;
   for (;;) {
