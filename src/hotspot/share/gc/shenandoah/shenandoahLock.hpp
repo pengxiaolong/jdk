@@ -60,6 +60,11 @@ public:
     return false;
 #endif
   }
+
+  void safepoint_synchronize_end() {
+    _impl.safepoint_synchronize_end();
+  }
+  
 };
 
 typedef ShenandoahLockType<ShenandoahLockDefault> ShenandoahLock;

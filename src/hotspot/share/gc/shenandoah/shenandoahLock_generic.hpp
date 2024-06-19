@@ -65,6 +65,9 @@ public:
   bool owned_by_self() {
     return _state == locked && _owner == Thread::current();
   }
+
+  void safepoint_synchronize_end() {
+  }
 };
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHLOCK_GENERIC_HPP
