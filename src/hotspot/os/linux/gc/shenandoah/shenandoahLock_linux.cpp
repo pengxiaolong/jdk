@@ -81,7 +81,7 @@ void LinuxShenandoahLock::contended_lock(uint32_t &current) {
         // Prepare to block and allow safepoints while blocked
         ThreadBlockInVM block(JavaThread::current(), true);
         OSThreadWaitState osts(JavaThread::current()->osthread(), false /* not in Object.wait() */);
-        Atomic::store(&_safe_point, 1);
+        Atomic::xchg(&_safe_point, 1);
         futex_wait(&_safe_point, 1);
         futex_wait(&_state, contended);
       } else {
@@ -115,6 +115,6 @@ void LinuxShenandoahLock::unlock() {
 }
 
 void LinuxShenandoahLock::safepoint_synchronize_end() {
-  Atomic::store(&_safe_point, 0);
+  Atomic::xchg(&_safe_point, 0);
   futex_wake(&_safe_point, INT_MAX); //Wake all waiting on _safe_point to clear.
 }
