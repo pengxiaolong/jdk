@@ -72,25 +72,25 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
 
 template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
 void LinuxShenandoahLock::contended_lock(uint32_t &current) {
+  Atomic::add(&_contenders, 1);
   while (current != unlocked) {
     if (Atomic::cmpxchg(&_state, locked, contended) == unlocked) {
       current = Atomic::xchg(&_state, contended); //An immediate attempt when _state is unlocked
     } else {
-      if (IS_JAVA_THREAD && ALLOW_BLOCK) {
+      if (IS_JAVA_THREAD && ALLOW_BLOCK && SafepointSynchronize::is_synchronizing()) {
         // Prepare to block and allow safepoints while blocked
         ThreadBlockInVM block(JavaThread::current(), true);
         OSThreadWaitState osts(JavaThread::current()->osthread(), false /* not in Object.wait() */);
-        Atomic::add(&_contenders, 1);
+        Atomic::store(&_safe_point, 1);
+        futex_wait(&_safe_point, 1);
         futex_wait(&_state, contended);
-        Atomic::add(&_contenders, -1);
       } else {
-        Atomic::add(&_contenders, 1);
         futex_wait(&_state, contended);
-        Atomic::add(&_contenders, -1);
       }
       current = Atomic::xchg(&_state, contended);
     }
   }
+  Atomic::add(&_contenders, -1);
 }
 
 void LinuxShenandoahLock::unlock() {
@@ -108,9 +108,13 @@ void LinuxShenandoahLock::unlock() {
       Atomic::cmpxchg(&_state, locked, contended);
       return;
     }
-    if (SafepointSynchronize::is_synchronizing()) return;
     SpinPause();
     i--;
   }
   if (Atomic::load(&_contenders) > 0) futex_wake(&_state, 1);
+}
+
+void LinuxShenandoahLock::safepoint_synchronize_end() {
+  Atomic::store(&_safe_point, 0);
+  futex_wake(&_safe_point, INT_MAX); //Wake all waiting on _safe_point to clear.
 }

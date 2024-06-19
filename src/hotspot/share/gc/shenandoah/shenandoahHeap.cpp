@@ -2377,6 +2377,7 @@ void ShenandoahHeap::safepoint_synchronize_begin() {
 
 void ShenandoahHeap::safepoint_synchronize_end() {
   SuspendibleThreadSet::desynchronize();
+  lock() -> safepoint_synchronize_end();
 }
 
 void ShenandoahHeap::try_inject_alloc_failure() {
