@@ -46,7 +46,9 @@ static long futex_wake(volatile uint32_t *addr, uint32_t val) {
 }
 
 static long futex_wait(volatile uint32_t *addr, uint32_t val) {
-  return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, val, nullptr, nullptr, 0);
+  timeout.tv_sec = 0;
+  timeout.tv_nsec = 10000;
+  return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, val, &timeout, nullptr, 0);
 }
 
 void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
@@ -69,67 +71,44 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
 
 template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
 void LinuxShenandoahLock::contended_lock(uint32_t &current) {
-    if(IS_JAVA_THREAD) {
-        do {
-            if (Atomic::cmpxchg(&_state, locked, contended) == unlocked) {
-                current = Atomic::xchg(&_state, contended);
-            } else {
-                if (SafepointSynchronize::is_synchronizing()) {
-                    if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
-                    if (ALLOW_BLOCK) {
-                        ThreadBlockInVM block(JavaThread::current(), true);
-                        os::naked_yield();
-                    } else {
-                        os::naked_yield();
-                    }
-                } else if (SafepointSynchronize::is_at_safepoint()) {
-                    if (Atomic::load(&_vm_contenders) > 0) futex_wake(&_state, 1);
-                    if (Atomic::load(&_state) == contended) {
-			    Atomic::add(&_contenders, 1);
-			    futex_wait(&_state, contended);
-			    Atomic::add(&_contenders, -1);
-		    }
-                    else os::naked_yield();
-                } else {
-		    Atomic::add(&_contenders, 1);
-                    futex_wait(&_state, contended);
-		    Atomic::add(&_contenders, -1);
-                    current = Atomic::xchg(&_state, contended);
-                }
-            }
-        } while (current != unlocked);
+  while (current != unlocked) {
+    if (Atomic::cmpxchg(&_state, locked, contended) == unlocked) {
+      current = Atomic::xchg(&_state, contended); //An immediate attempt when _state is unlocked
     } else {
-        Atomic::add(&_vm_contenders, 1);
-        do {
-            if (Atomic::cmpxchg(&_state, locked, contended) != unlocked) {
-		Atomic::add(&_contenders, 1);
-                futex_wait(&_state, contended);
-		Atomic::add(&_contenders, -1);
-            }
-            current = Atomic::xchg(&_state, contended);
-        } while (current != unlocked);
-        Atomic::add(&_vm_contenders, -1);
+      if (IS_JAVA_THREAD && ALLOW_BLOCK) {
+        // Prepare to block and allow safepoints while blocked
+        ThreadBlockInVM block(JavaThread::current(), true);
+        OSThreadWaitState osts(JavaThread::current()->osthread(), false /* not in Object.wait() */);
+        Atomic::add(&_contenders, 1);
+        futex_wait(&_state, contended);
+        Atomic::add(&_contenders, -1);
+      } else {
+        Atomic::add(&_contenders, 1);
+        futex_wait(&_state, contended);
+        Atomic::add(&_contenders, -1);
+      }
+      current = Atomic::xchg(&_state, contended);
     }
+  }
 }
 
 void LinuxShenandoahLock::unlock() {
-    assert(Atomic::load(&_owner) == Thread::current(), "sanity");
-    Atomic::store(&_owner, (Thread*)nullptr);
-    OrderAccess::fence();
-    Atomic::xchg(&_state, unlocked);
+  Thread* thread = Thread::current();
+  assert(Atomic::load(&_owner) == thread, "sanity");
+  Atomic::store(&_owner, (Thread*)nullptr);
+  OrderAccess::fence();
+  Atomic::xchg(&_state, unlocked);
 
-    bool wake_contender = true;
-    int i = os::is_MP() ? 64 : 0;
-    for( ; ; ) {
-      if(i <= 0) break;
-      if (Atomic::load(&_contenders) == 0) return;
-      if (Atomic::load(&_state) != unlocked) {
-          Atomic::cmpxchg(&_state, locked, contended);
-	  return;
-      }
-      SpinPause();
-      i--;
+  int i = os::is_MP() ? Atomic::load(&_contenders) : 0;
+  for (;;) {
+    if(i <= 0) break;
+    if (Atomic::load(&_contenders) == 0) return;
+    if (Atomic::load(&_state) != unlocked) {
+      Atomic::cmpxchg(&_state, locked, contended);
+      return;
     }
-    if (Atomic::load(&_contenders) > 0) futex_wake(&_state, 1);
+    SpinPause();
+    i--;
+  }
+  if (Atomic::load(&_contenders) > 0) futex_wake(&_state, 1);
 }
-
