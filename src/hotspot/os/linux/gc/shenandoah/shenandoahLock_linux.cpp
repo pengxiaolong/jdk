@@ -45,11 +45,15 @@ static long futex_wake(volatile uint32_t *addr, uint32_t val) {
   return syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, val, nullptr, nullptr, 0);
 }
 
-static long futex_wait(volatile uint32_t *addr, uint32_t val) {
-  struct timespec timeout;
-  timeout.tv_sec = 0;
-  timeout.tv_nsec = 100000;
-  return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, val, &timeout, nullptr, 0);
+static long futex_wait(volatile uint32_t *addr, uint32_t val, long ns = -1) {
+  if(ns <= 0) {
+    return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, val, nullptr, nullptr, 0);
+  } else {
+    struct timespec timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_nsec = ns;
+    return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, val, &timeout, nullptr, 0);
+  }
 }
 
 void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
@@ -81,11 +85,11 @@ void LinuxShenandoahLock::contended_lock(uint32_t &current) {
         // Prepare to block and allow safepoints while blocked
         ThreadBlockInVM block(JavaThread::current(), true);
         OSThreadWaitState osts(JavaThread::current()->osthread(), false /* not in Object.wait() */);
-        Atomic::xchg(&_safe_point, 1);
+        _safe_point = 1;
         futex_wait(&_safe_point, 1);
-        futex_wait(&_state, contended);
+        futex_wait(&_state, contended, 1000000);
       } else {
-        futex_wait(&_state, contended);
+        futex_wait(&_state, contended, 1000000);
       }
       current = Atomic::xchg(&_state, contended);
     }
@@ -100,7 +104,7 @@ void LinuxShenandoahLock::unlock() {
   OrderAccess::fence();
   Atomic::xchg(&_state, unlocked);
 
-  int i = os::is_MP() ? Atomic::load(&_contenders) : 0;
+  int i = os::is_MP() ? 32 : 0;
   for (;;) {
     if(i <= 0) break;
     if (Atomic::load(&_contenders) == 0) return;
@@ -115,6 +119,6 @@ void LinuxShenandoahLock::unlock() {
 }
 
 void LinuxShenandoahLock::safepoint_synchronize_end() {
-  Atomic::xchg(&_safe_point, 0);
+  _safe_point = 0;
   futex_wake(&_safe_point, INT_MAX); //Wake all waiting on _safe_point to clear.
 }
