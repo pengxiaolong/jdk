@@ -37,7 +37,7 @@ private:
   Thread* volatile _owner;
   volatile int _contenders;
   
-  template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
+  template<bool ALLOW_BLOCK>
   void contended_lock(uint32_t &current);
 public:
   LinuxShenandoahLock() : _state(0), _safe_point(0), _owner(nullptr), _contenders(0) {};

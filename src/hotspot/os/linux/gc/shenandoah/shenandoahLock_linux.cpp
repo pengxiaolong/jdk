@@ -62,11 +62,11 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     // Try fast lock
     uint32_t current = Atomic::cmpxchg(&_state, unlocked, locked);
     if (current != unlocked) { // When fast lock fails dive into contented lock.
-        if (thread->is_Java_thread()) {
-            if (allow_block_for_safepoint) contended_lock<true, true>(current);
-            else contended_lock<true, false>(current);
+        if (thread->is_Java_thread() && allow_block_for_safepoint) {
+          contended_lock<true>(current);
+        } else {
+          contended_lock<false>(current);
         }
-        else contended_lock<false, false>(current);
     }
     assert(Atomic::load(&_state) != unlocked, "must not be unlocked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
@@ -74,27 +74,34 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
     Atomic::store(&_owner, Thread::current());
 }
 
-template<bool IS_JAVA_THREAD, bool ALLOW_BLOCK>
+template<bool ALLOW_BLOCK>
 void LinuxShenandoahLock::contended_lock(uint32_t &current) {
-  Atomic::add(&_contenders, 1);
   while (current != unlocked) {
     if (Atomic::cmpxchg(&_state, locked, contended) == unlocked) {
       current = Atomic::xchg(&_state, contended); //An immediate attempt when _state is unlocked
     } else {
-      if (IS_JAVA_THREAD && ALLOW_BLOCK && SafepointSynchronize::is_synchronizing()) {
-        // Prepare to block and allow safepoints while blocked
-        ThreadBlockInVM block(JavaThread::current(), true);
-        OSThreadWaitState osts(JavaThread::current()->osthread(), false /* not in Object.wait() */);
-        _safe_point = 1;
-        futex_wait(&_safe_point, 1);
-        futex_wait(&_state, contended, 1000000);
+      if (ALLOW_BLOCK) {
+        JavaThread* jthread = JavaThread::current();
+        if (SafepointMechanism::local_poll_armed(jthread)) {
+          // if local_poll_armed is true for the thread,
+          // TBIVM blocks the thread at SP WaitBarrier.
+          // No need to call futex_wait after WaitBarrier disarmed.
+          ThreadBlockInVM block(jthread);
+        } else {
+          ThreadBlockInVM block(JavaThread::current());
+          Atomic::add(&_contenders, 1);
+          futex_wait(&_state, contended);
+          Atomic::add(&_contenders, -1);
+        }
       } else {
-        futex_wait(&_state, contended, 1000000);
+        //Wait w/o safepoint if it is not allowed to block.
+        Atomic::add(&_contenders, 1);
+        futex_wait(&_state, contended);
+        Atomic::add(&_contenders, -1);
       }
       current = Atomic::xchg(&_state, contended);
     }
   }
-  Atomic::add(&_contenders, -1);
 }
 
 void LinuxShenandoahLock::unlock() {
