@@ -121,11 +121,10 @@ void LinuxShenandoahLock::unlock() {
       Atomic::cmpxchg(&_state, locked, contended);
       return;
     }
-    if (thread->is_Java_thread() && SafepointSynchronize::is_synchronizing()) return;
     SpinPause();
     i--;
   }
-  if (Atomic::load(&_contenders) > 0 && Atomic::load(&_state) != unlocked) futex_wake(&_state, 1);
+  if (Atomic::load(&_contenders) > 0 && Atomic::load(&_state) == unlocked) futex_wake(&_state, 1);
 }
 
 void LinuxShenandoahLock::safepoint_synchronize_end() {
