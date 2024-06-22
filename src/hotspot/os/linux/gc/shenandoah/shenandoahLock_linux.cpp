@@ -81,14 +81,16 @@ void LinuxShenandoahLock::contended_lock(uint32_t &current) {
       current = Atomic::xchg(&_state, contended); //An immediate attempt when _state is unlocked
     } else {
       if (ALLOW_BLOCK) {
+        ThreadBlockInVM block(jthread);
         JavaThread* jthread = JavaThread::current();
-        if (SafepointMechanism::local_poll_armed(jthread)) {
+        if (SafepointSynchronize::is_synchronizing()) {
           // if local_poll_armed is true for the thread,
           // TBIVM blocks the thread at SP WaitBarrier.
           // No need to call futex_wait after WaitBarrier disarmed.
-          ThreadBlockInVM block(jthread);
+          while (!SafepointMechanism::local_poll_armed(jthread)) {
+            os::naked_yield();
+          }
         } else {
-          ThreadBlockInVM block(JavaThread::current());
           Atomic::add(&_contenders, 1);
           futex_wait(&_state, contended);
           Atomic::add(&_contenders, -1);
@@ -119,10 +121,11 @@ void LinuxShenandoahLock::unlock() {
       Atomic::cmpxchg(&_state, locked, contended);
       return;
     }
+    if (thread->is_Java_thread() && SafepointSynchronize::is_synchronizing()) return;
     SpinPause();
     i--;
   }
-  if (Atomic::load(&_contenders) > 0) futex_wake(&_state, 1);
+  if (Atomic::load(&_contenders) > 0 && Atomic::load(&_state) != unlocked) futex_wake(&_state, 1);
 }
 
 void LinuxShenandoahLock::safepoint_synchronize_end() {
