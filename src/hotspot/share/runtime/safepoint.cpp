@@ -371,6 +371,7 @@ void SafepointSynchronize::begin() {
 
   // Will spin until all threads are safe.
   int iterations = synchronize_threads(safepoint_limit_time, nof_threads, &initial_running);
+  DEBUG_ONLY(log_info(safepoint)("Safepoint synchronize threads iterations: %i", iterations););
   assert(_waiting_to_block == 0, "No thread should be running");
 
 #ifndef PRODUCT
@@ -565,7 +566,7 @@ void SafepointSynchronize::block(JavaThread *thread) {
      return;
   }
 
-  JavaThreadState state = thread->thread_state();
+  JavaThreadState const state = thread->thread_state();
   thread->frame_anchor()->make_walkable();
 
   uint64_t safepoint_id = SafepointSynchronize::safepoint_counter();
@@ -579,14 +580,18 @@ void SafepointSynchronize::block(JavaThread *thread) {
   // This part we can skip if we notice we miss or are in a future safepoint.
   OrderAccess::storestore();
   // Load in wait barrier should not float up
-  thread->set_thread_state_fence(_thread_blocked);
+  if (state != _thread_blocked) {
+    thread->set_thread_state_fence(_thread_blocked);
+  }
 
   _wait_barrier->wait(static_cast<int>(safepoint_id));
   assert(_state != _synchronized, "Can't be");
 
   // If barrier is disarmed stop store from floating above loads in barrier.
   OrderAccess::loadstore();
-  thread->set_thread_state(state);
+  if (state != _thread_blocked) {
+    thread->set_thread_state(state);
+  }
 
   // Then we reset the safepoint id to inactive.
   thread->safepoint_state()->reset_safepoint_id(); // Release store

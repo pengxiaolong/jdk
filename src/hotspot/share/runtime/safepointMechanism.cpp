@@ -92,7 +92,6 @@ uintptr_t SafepointMechanism::compute_poll_word(bool armed, uintptr_t stack_wate
 
 void SafepointMechanism::update_poll_values(JavaThread* thread) {
   assert(thread == Thread::current(), "Must be");
-  assert(thread->thread_state() != _thread_blocked, "Must not be");
   assert(thread->thread_state() != _thread_in_native, "Must not be");
 
   for (;;) {
@@ -140,7 +139,7 @@ void SafepointMechanism::process(JavaThread *thread, bool allow_suspend, bool ch
   bool need_rechecking;
   do {
     JavaThreadState state = thread->thread_state();
-    guarantee(state == _thread_in_vm, "Illegal threadstate encountered: %d", state);
+    guarantee(state == _thread_in_vm || state == _thread_blocked, "Illegal threadstate encountered: %d", state);
     if (global_poll()) {
       // Any load in ::block() must not pass the global poll load.
       // Otherwise we might load an old safepoint counter (for example).

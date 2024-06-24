@@ -37,6 +37,7 @@ class Thread;
 // This is the abstracted interface for the safepoint implementation
 class SafepointMechanism : public AllStatic {
   friend class StackWatermark;
+  friend class StackWatermarkSet;
   static uintptr_t _poll_page_armed_value;
   static uintptr_t _poll_page_disarmed_value;
 

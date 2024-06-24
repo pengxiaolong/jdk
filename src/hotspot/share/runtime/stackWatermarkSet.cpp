@@ -73,7 +73,7 @@ static void verify_processing_context() {
     JavaThread* jt = JavaThread::cast(thread);
     JavaThreadState state = jt->thread_state();
     assert(state != _thread_in_native, "unsafe thread state");
-    assert(state != _thread_blocked, "unsafe thread state");
+    assert(state != _thread_blocked || !(SafepointSynchronize::is_at_safepoint() || SafepointSynchronize::is_synchronizing()) , "unsafe thread state");
   } else if (thread->is_VM_thread()) {
   } else {
     assert_locked_or_safepoint(Threads_lock);
