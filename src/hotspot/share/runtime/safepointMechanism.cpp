@@ -130,21 +130,33 @@ void SafepointMechanism::update_poll_values(JavaThread* thread) {
   }
 }
 
-void SafepointMechanism::process(JavaThread *thread, bool allow_suspend, bool check_async_exception) {
+void SafepointMechanism::process(JavaThread *thread, bool allow_suspend, bool check_async_exception, bool is_from_tbivm) {
   DEBUG_ONLY(intptr_t* sp_before = thread->last_Java_sp();)
   // Read global poll and has_handshake after local poll
   OrderAccess::loadload();
 
   // local poll already checked, if used.
-  bool need_rechecking;
+  bool need_rechecking = false;
   do {
     JavaThreadState state = thread->thread_state();
-    guarantee(state == _thread_in_vm || state == _thread_blocked, "Illegal threadstate encountered: %d", state);
+    if (is_from_tbivm && !need_rechecking) {
+      guarantee(state == _thread_blocked, "Illegal threadstate encountered: %d", state);
+    } else {
+      guarantee(state == _thread_in_vm, "Illegal threadstate encountered: %d", state);
+    }
     if (global_poll()) {
       // Any load in ::block() must not pass the global poll load.
       // Otherwise we might load an old safepoint counter (for example).
       OrderAccess::loadload();
       SafepointSynchronize::block(thread);
+    }
+
+    if (is_from_tbivm && !need_rechecking) {
+      guarantee(thread->thread_state() == _thread_blocked, "Illegal threadstate encountered: %d", state);
+      // Must set state to _thread_in_vm  StackWatermark handshake processing 
+      thread->set_thread_state_fence(_thread_in_vm);
+    } slse {
+      guarantee(thread->thread_state() == _thread_in_vm, "Illegal threadstate encountered: %d", state);
     }
 
     // The call to on_safepoint fixes the thread's oops and the first few frames.

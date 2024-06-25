@@ -213,10 +213,12 @@ class ThreadBlockInVMPreprocess : public ThreadStateTransition {
 
     if (SafepointMechanism::should_process(_thread, _allow_suspend)) {
       _pr(_thread);
-      SafepointMechanism::process_if_requested(_thread, _allow_suspend, false /* check_async_exception */);
+      SafepointMechanism::process_if_requested(_thread, _allow_suspend, false /* check_async_exception */, true /*call from tbivm*/);
     }
-    // Change back to _thread_in_vm and ensure it is seen by the VM thread.
-    _thread->set_thread_state_fence(_thread_in_vm);
+    if (_thread->thread_state() == _thread_blocked) {
+      // Change back to _thread_in_vm and ensure it is seen by the VM thread.
+      _thread->set_thread_state_fence(_thread_in_vm);
+    }
   }
 };
 

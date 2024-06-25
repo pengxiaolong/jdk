@@ -75,12 +75,12 @@ bool SafepointMechanism::should_process(JavaThread* thread, bool allow_suspend) 
   return false;
 }
 
-void SafepointMechanism::process_if_requested(JavaThread* thread, bool allow_suspend, bool check_async_exception) {
+void SafepointMechanism::process_if_requested(JavaThread* thread, bool allow_suspend, bool check_async_exception, bool is_from_tbivm) {
   // Check NoSafepointVerifier. This also clears unhandled oops if CheckUnhandledOops is used.
   thread->check_possible_safepoint();
 
   if (local_poll_armed(thread)) {
-    process(thread, allow_suspend, check_async_exception);
+    process(thread, allow_suspend, check_async_exception, is_from_tbivm);
   }
 }
 
