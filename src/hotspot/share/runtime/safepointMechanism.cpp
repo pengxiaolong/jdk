@@ -153,12 +153,11 @@ void SafepointMechanism::process(JavaThread *thread, bool allow_suspend, bool ch
 
     if (is_from_tbivm && !need_rechecking) {
       guarantee(thread->thread_state() == _thread_blocked, "Illegal threadstate encountered: %d", state);
-      // Must set state to _thread_in_vm  StackWatermark handshake processing 
+      // Must set state to _thread_in_vm before StackWatermark and handshake processing 
       thread->set_thread_state_fence(_thread_in_vm);
-    } slse {
-      guarantee(thread->thread_state() == _thread_in_vm, "Illegal threadstate encountered: %d", state);
     }
 
+    guarantee(thread->thread_state() == _thread_in_vm, "Illegal threadstate encountered: %d", state);
     // The call to on_safepoint fixes the thread's oops and the first few frames.
     //
     // The call has been carefully placed here to cater to a few situations:
