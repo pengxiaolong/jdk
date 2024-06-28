@@ -33,20 +33,18 @@ private:
   static const uint32_t locked  = 1;
   static const uint32_t contended = 2;
   volatile uint32_t _state;
-  volatile uint32_t _safe_point;
   Thread* volatile _owner;
   volatile int _contenders;
   
   template<bool ALLOW_BLOCK>
   void contended_lock(uint32_t &current);
 public:
-  LinuxShenandoahLock() : _state(0), _safe_point(0), _owner(nullptr), _contenders(0) {};
+  LinuxShenandoahLock() : _state(0), _owner(nullptr), _contenders(0) {};
   void lock(bool allow_block_for_safepoint);
   void unlock();
   bool owned_by_self() {
     return _state != unlocked && _owner == Thread::current();
   }
-  void safepoint_synchronize_end();
 };
 
 #endif //OS_LINUX_GC_SHENANDOAH_SHENANDOAHLOCK_LINUX_HPP

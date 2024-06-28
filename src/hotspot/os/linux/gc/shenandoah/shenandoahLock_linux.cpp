@@ -136,8 +136,3 @@ void LinuxShenandoahLock::unlock() {
   }
   if (Atomic::load(&_contenders) > 0 && Atomic::load(&_state) == unlocked) futex_wake(&_state, 1);
 }
-
-void LinuxShenandoahLock::safepoint_synchronize_end() {
-  _safe_point = 0;
-  futex_wake(&_safe_point, INT_MAX); //Wake all waiting on _safe_point to clear.
-}
