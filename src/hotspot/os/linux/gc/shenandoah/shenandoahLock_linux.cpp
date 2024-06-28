@@ -76,6 +76,16 @@ void LinuxShenandoahLock::lock(bool allow_block_for_safepoint) {
 
 template<bool ALLOW_BLOCK>
 void LinuxShenandoahLock::contended_lock(uint32_t &current) {
+  int remaining_spins = os::is_MP() ? 512 : 0;
+  // Spin pause is considered faster and cheaper than futex system calls,
+  // Therefore it make sense to try spin pause before it fall into slower/more expensive futex.
+  // It benefits most of regular cases in which the lock is contended but extremely contended.
+  while (remaining_spins-- > 0 &&
+         !SafepointSynchronize::is_synchronizing() &&
+         (Atomic::load(&_state) != unlocked || (current = Atomic::cmpxchg(&_state, unlocked, contended)) != unlocked)) {
+    SpinPause();
+  }
+
   while (current != unlocked) {
     if (Atomic::cmpxchg(&_state, locked, contended) == unlocked) {
       current = Atomic::xchg(&_state, contended); //An immediate attempt when _state is unlocked
