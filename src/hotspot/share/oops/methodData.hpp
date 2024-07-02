@@ -1951,17 +1951,17 @@ private:
   friend class TypeEntriesAtCall;
   friend class ciMethodData;
 
-  // If you add a new field that points to any metaspace object, you
-  // must add this field to MethodData::metaspace_pointers_do().
-
-  // Back pointer to the Method*
-  Method* _method;
-
   // Size of this oop in bytes
   int _size;
 
   // Cached hint for bci_to_dp and bci_to_data
   int _hint_di;
+
+  // If you add a new field that points to any metaspace object, you
+  // must add this field to MethodData::metaspace_pointers_do().
+
+  // Back pointer to the Method*
+  Method* _method;
 
   Mutex _extra_data_lock;
 
