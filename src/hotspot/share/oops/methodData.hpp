@@ -1944,28 +1944,6 @@ class FailedSpeculation: public CHeapObj<mtCompiler> {
 class ciMethodData;
 
 class MethodData : public Metadata {
-  friend class VMStructs;
-  friend class JVMCIVMStructs;
-private:
-  friend class ProfileData;
-  friend class TypeEntriesAtCall;
-  friend class ciMethodData;
-
-  // Size of this oop in bytes
-  int _size;
-
-  // Cached hint for bci_to_dp and bci_to_data
-  int _hint_di;
-
-  // If you add a new field that points to any metaspace object, you
-  // must add this field to MethodData::metaspace_pointers_do().
-
-  // Back pointer to the Method*
-  Method* _method;
-
-  Mutex _extra_data_lock;
-
-  MethodData(const methodHandle& method);
 public:
   static MethodData* allocate(ClassLoaderData* loader_data, const methodHandle& method, TRAPS);
 
@@ -2044,6 +2022,28 @@ public:
       return byte_offset_of(CompilerCounters, _trap_hist._array);
     }
   };
+private:
+  friend class VMStructs;
+  friend class JVMCIVMStructs;
+  friend class ProfileData;
+  friend class TypeEntriesAtCall;
+  friend class ciMethodData;
+
+  // Size of this oop in bytes
+  int _size;
+
+  // Cached hint for bci_to_dp and bci_to_data
+  int _hint_di;
+
+  // If you add a new field that points to any metaspace object, you
+  // must add this field to MethodData::metaspace_pointers_do().
+
+  // Back pointer to the Method*
+  Method* _method;
+
+  Mutex _extra_data_lock;
+
+  MethodData(const methodHandle& method);
 
 private:
   CompilerCounters _compiler_counters;
