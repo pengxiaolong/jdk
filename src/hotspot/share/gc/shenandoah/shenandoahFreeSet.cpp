@@ -909,15 +909,27 @@ void ShenandoahFreeSet::try_recycle_trashed(ShenandoahHeapRegion *r) {
 void ShenandoahFreeSet::recycle_trash() {
   // lock is not reentrable, check we don't have it
   shenandoah_assert_not_heaplocked();
-
+  int count = 0;
+  jlong total_time_taking_lock = 0;
+  jlong total_time_recycling = 0;
+  const jlong start = os::javaTimeNanos();
   for (size_t i = 0; i < _heap->num_regions(); i++) {
     ShenandoahHeapRegion* r = _heap->get_region(i);
     if (r->is_trash()) {
+      count ++;
+      const jlong time1 = os::javaTimeNanos();
       ShenandoahHeapLocker locker(_heap->lock());
+      const jlong time2 = os::javaTimeNanos();
       try_recycle_trashed(r);
+      const jlong time3 = os::javaTimeNanos();
+      total_time_taking_lock += (time2 - time1);
+      total_time_recycling += (time3 - time2);
     }
     SpinPause(); // allow allocators to take the lock
   }
+  const jlong total = os::javaTimeNanos() - start;
+  log_info(gc)("Recycled %d regions in %ldns, break down: acquiring lock -> %ld, recycling -> %ld.",
+  count, total, total_time_taking_lock, total_time_recycling);
 }
 
 void ShenandoahFreeSet::flip_to_gc(ShenandoahHeapRegion* r) {
