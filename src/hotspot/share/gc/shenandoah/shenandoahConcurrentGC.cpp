@@ -555,7 +555,7 @@ void ShenandoahConcurrentGC::op_init_mark() {
   {
     ShenandoahGCPhase phase(ShenandoahPhaseTimings::init_update_region_states);
     ShenandoahInitMarkUpdateRegionStateClosure cl;
-    heap->parallel_heap_region_iterate(&cl);
+    heap->heap_region_iterate(&cl);
   }
 
   // Weak reference processing

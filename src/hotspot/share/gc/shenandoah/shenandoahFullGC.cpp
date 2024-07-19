@@ -287,7 +287,7 @@ void ShenandoahFullGC::phase1_mark_heap() {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
 
   ShenandoahPrepareForMarkClosure cl;
-  heap->parallel_heap_region_iterate(&cl);
+  heap->heap_region_iterate(&cl);
 
   heap->set_unload_classes(heap->heuristics()->can_unload_classes());
 
