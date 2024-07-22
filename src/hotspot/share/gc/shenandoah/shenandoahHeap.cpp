@@ -1726,8 +1726,9 @@ public:
 void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk) const {
   assert(blk->is_thread_safe(), "Only thread-safe closures here");
   if (num_regions() > ShenandoahParallelRegionStride) {
+    auto num_threads = static_cast<size_t>(ceil(static_cast<float>(num_regions()) / static_cast<float>(ShenandoahParallelRegionStride)));
     ShenandoahParallelHeapRegionTask task(blk);
-    workers()->run_task(&task);
+    workers()->run_task(&task, num_threads);
   } else {
     heap_region_iterate(blk);
   }
