@@ -1738,7 +1738,7 @@ public:
   }
 };
 
-void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk, constexpr size_t threshold) const {
+void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk, size_t threshold) const {
   assert(blk->is_thread_safe(), "Only thread-safe closures here");
   const uint active_workers = workers()->active_workers();
   const size_t n_regions = num_regions();
