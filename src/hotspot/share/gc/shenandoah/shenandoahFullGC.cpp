@@ -1093,7 +1093,7 @@ void ShenandoahFullGC::phase5_epilog() {
     //ShenandoahMCResetCompleteBitmapTask task;
     //heap->workers()->run_task(&task);
     ShenandoahMCResetCompleteBitmapHeapRegionClosure cl;
-    heap->parallel_heap_region_iterate(&cl);
+    heap->parallel_heap_region_iterate(&cl, 512);
   }
 
   // Bring regions in proper states after the collection, and set heap properties.

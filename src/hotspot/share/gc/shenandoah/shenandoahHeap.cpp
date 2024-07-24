@@ -592,7 +592,7 @@ void ShenandoahHeap::reset_mark_bitmap() {
   //ShenandoahResetBitmapTask task;
   //_workers->run_task(&task);
   ShenandoahResetBitmapHeapRegionClosure cl;
-  parallel_heap_region_iterate(&cl);
+  parallel_heap_region_iterate(&cl, 512);
 }
 
 void ShenandoahHeap::print_on(outputStream* st) const {
@@ -1738,7 +1738,7 @@ public:
   }
 };
 
-void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk) const {
+void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk, constexpr size_t threshold) const {
   assert(blk->is_thread_safe(), "Only thread-safe closures here");
   const uint active_workers = workers()->active_workers();
   const size_t n_regions = num_regions();
@@ -1746,7 +1746,6 @@ void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* b
   if (stride == 0 && active_workers > 1) {
     // Automatically derive the stride to balance the work between threads
     // evenly. Do not try to split work if below the reasonable threshold.
-    constexpr size_t threshold = 4096;
     stride = n_regions <= threshold ?
             threshold :
             (n_regions + active_workers - 1) / active_workers;

@@ -254,7 +254,7 @@ public:
   inline ShenandoahHeapRegion* get_region(size_t region_idx) const;
 
   void heap_region_iterate(ShenandoahHeapRegionClosure* blk) const;
-  void parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk) const;
+  void parallel_heap_region_iterate(ShenandoahHeapRegionClosure* blk, constexpr size_t threshold = 4096) const;
 
 // ---------- GC state machinery
 //
