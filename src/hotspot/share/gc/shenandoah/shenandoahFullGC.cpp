@@ -1050,6 +1050,18 @@ public:
   }
 };
 
+class ShenandoahMCResetCompleteBitmapHeapRegionClosure final : public ShenandoahHeapRegionClosure {
+public:
+  void heap_region_do(ShenandoahHeapRegion *r) override {
+    ShenandoahHeap* heap = ShenandoahHeap::heap();
+    if (heap->is_bitmap_slice_committed(r) && !r->is_pinned() && r->has_live()) {
+      heap->complete_marking_context()->clear_bitmap(r);
+    }
+  }
+
+  bool is_thread_safe() override { return true; }
+};
+
 void ShenandoahFullGC::phase4_compact_objects(ShenandoahHeapRegionSet** worker_slices) {
   GCTraceTime(Info, gc, phases) time("Phase 4: Move objects", _gc_timer);
   ShenandoahGCPhase compaction_phase(ShenandoahPhaseTimings::full_gc_copy_objects);
@@ -1078,8 +1090,10 @@ void ShenandoahFullGC::phase5_epilog() {
   // and must ensure the bitmap is in sync.
   {
     ShenandoahGCPhase phase(ShenandoahPhaseTimings::full_gc_copy_objects_reset_complete);
-    ShenandoahMCResetCompleteBitmapTask task;
-    heap->workers()->run_task(&task);
+    //ShenandoahMCResetCompleteBitmapTask task;
+    //heap->workers()->run_task(&task);
+    ShenandoahMCResetCompleteBitmapHeapRegionClosure cl;
+    heap->parallel_heap_region_iterate(&cl);
   }
 
   // Bring regions in proper states after the collection, and set heap properties.

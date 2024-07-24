@@ -573,12 +573,26 @@ public:
   }
 };
 
+class ShenandoahResetBitmapHeapRegionClosure final : public ShenandoahHeapRegionClosure {
+public:
+  void heap_region_do(ShenandoahHeapRegion *r) override {
+    ShenandoahHeap* heap = ShenandoahHeap::heap();
+    if (heap->is_bitmap_slice_committed(r)) {
+      heap->marking_context()->clear_bitmap(r);
+    }
+  }
+
+  bool is_thread_safe() override { return true; }
+};
+
 void ShenandoahHeap::reset_mark_bitmap() {
   assert_gc_workers(_workers->active_workers());
   mark_incomplete_marking_context();
 
-  ShenandoahResetBitmapTask task;
-  _workers->run_task(&task);
+  //ShenandoahResetBitmapTask task;
+  //_workers->run_task(&task);
+  ShenandoahResetBitmapHeapRegionClosure cl;
+  parallel_heap_region_iterate(&cl);
 }
 
 void ShenandoahHeap::print_on(outputStream* st) const {
