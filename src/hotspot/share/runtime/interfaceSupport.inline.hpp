@@ -223,7 +223,14 @@ class ThreadBlockInVMPreprocess : public ThreadStateTransition {
 class ThreadBlockInVM  : public ThreadBlockInVMPreprocess<> {
  public:
   ThreadBlockInVM(JavaThread* thread, bool allow_suspend = false)
-    : ThreadBlockInVMPreprocess(thread, emptyOp, allow_suspend) {}
+    : ThreadBlockInVMPreprocess(thread, emptyOp, allow_suspend) {
+    if (SafepointSynchronize::is_synchronizing() && Thread::current()->is_Java_thread()) {
+      while (SafepointSynchronize::is_synchronizing() &&
+             !SafepointMechanism::local_poll_armed(JavaThread::current())) {
+        os::naked_yield();
+      }
+    }
+  }
  private:
   static void emptyOp(JavaThread* current) {}
 };
