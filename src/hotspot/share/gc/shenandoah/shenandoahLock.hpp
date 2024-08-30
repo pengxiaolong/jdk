@@ -39,6 +39,7 @@ private:
   shenandoah_padding(1);
   Thread* volatile _owner;
   shenandoah_padding(2);
+  jlong _t_acquire;
 
   template<bool ALLOW_BLOCK>
   void contended_lock_internal(JavaThread* java_thread);
@@ -59,13 +60,19 @@ public:
     assert(Atomic::load(&_state) == locked, "must be locked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
     DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
+    _t_acquire = os::javaTimeNanos();
   }
 
   void unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
+    jlong holding_duration = os::javaTimeNanos() - _t_acquire;
     OrderAccess::fence();
     Atomic::store(&_state, unlocked);
+    if( holding_duration > 10000000) {
+      ResourceMark rm;
+      log_info(gc)("Thread %s released heap lock afer holding for %ld ns", Thread::current()->is_Java_thread() ? "Java" : Thread::current()->name(), holding_duration);
+    }
   }
 
   void contended_lock(bool allow_block_for_safepoint);
