@@ -958,7 +958,12 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
 
       size_t original_count = shenandoah_policy()->full_gc_count();
       while ((result == nullptr) && (original_count == shenandoah_policy()->full_gc_count())) {
+        jlong start = os::javaTimeNanos();
         control_thread()->handle_alloc_failure(req, true);
+        jlong waited = os::javaTimeNanos() - start;
+        if(waited > 10000000) {
+          log_info(gc)("It took %ld ns to wait for control thread to react to GC reqquest.", waited);
+        }
         result = allocate_memory_under_lock(req, in_new_region);
         if(req._t_allocate > 10000000) {
           log_info(gc)("It took %ld ns to allocate, time to acquire lock: %ld, actual size: %lu.", req._t_allocate,  req._t_acquire_lock, req.actual_size());
