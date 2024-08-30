@@ -53,6 +53,11 @@ class MemAllocator::Allocation: StackObj {
   bool                _allocated_outside_tlab;
   size_t              _allocated_tlab_size;
   bool                _tlab_end_reset_for_sample;
+  jlong               _t_begin = 0L;
+  jlong               _t_tlab_fast = 0L;
+  jlong               _t_tlab_slow = 0L;
+  jlong               _t_out_tlab = 0L;
+  jlong               _t_end = 0L;
 
   bool check_out_of_memory();
   void verify_before();
@@ -322,6 +327,7 @@ HeapWord* MemAllocator::mem_allocate(Allocation& allocation) const {
   if (UseTLAB) {
     // Try allocating from an existing TLAB.
     HeapWord* mem = mem_allocate_inside_tlab_fast();
+    allocation._t_tlab_fast = os::javaTimeNanos();
     if (mem != nullptr) {
       return mem;
     }
@@ -333,19 +339,29 @@ HeapWord* MemAllocator::mem_allocate(Allocation& allocation) const {
   if (UseTLAB) {
     // Try refilling the TLAB and allocating the object in it.
     HeapWord* mem = mem_allocate_inside_tlab_slow(allocation);
+    allocation._t_tlab_slow = os::javaTimeNanos();
     if (mem != nullptr) {
       return mem;
     }
   }
 
-  return mem_allocate_outside_tlab(allocation);
+  HeapWord* mem = mem_allocate_outside_tlab(allocation);
+  allocation._t_out_tlab = os::javaTimeNanos();
+  return mem;
 }
 
 oop MemAllocator::allocate() const {
   oop obj = nullptr;
   {
     Allocation allocation(*this, &obj);
+    allocation._t_begin = os::javaTimeNanos();
     HeapWord* mem = mem_allocate(allocation);
+    allocation._t_end = os::javaTimeNanos();
+    jlong duration = allocation._t_end - allocation._t_begin;
+    if (duration > 10000000L) {
+      log_info(gc)("It took over %ld to allocate memory, begin: %ld, end: %ld, tlab_fast: %ld, tlab_slow: %ld, out_tlab: %ld", duration,
+        allocation._t_begin, allocation._t_end, allocation._t_tlab_fast, allocation._t_tlab_slow, allocation._t_out_tlab);
+    }
     if (mem != nullptr) {
       obj = initialize(mem);
     } else {
