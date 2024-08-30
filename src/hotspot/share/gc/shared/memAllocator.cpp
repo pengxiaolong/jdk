@@ -58,6 +58,7 @@ class MemAllocator::Allocation: StackObj {
   jlong               _t_tlab_slow = 0L;
   jlong               _t_out_tlab = 0L;
   jlong               _t_end = 0L;
+  jlong               _t_allocate_new_tlab = 0L;
 
   bool check_out_of_memory();
   void verify_before();
@@ -296,7 +297,9 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
   // Allocate a new TLAB requesting new_tlab_size. Any size
   // between minimal and new_tlab_size is accepted.
   size_t min_tlab_size = ThreadLocalAllocBuffer::compute_min_size(_word_size);
+  jlong start = os::javaTimeNanos();
   mem = Universe::heap()->allocate_new_tlab(min_tlab_size, new_tlab_size, &allocation._allocated_tlab_size);
+  allocation._t_allocate_new_tlab = os::javaTimeNanos() - start;
   if (mem == nullptr) {
     assert(allocation._allocated_tlab_size == 0,
            "Allocation failed, but actual size was updated. min: " SIZE_FORMAT
@@ -359,8 +362,8 @@ oop MemAllocator::allocate() const {
     allocation._t_end = os::javaTimeNanos();
     jlong duration = allocation._t_end - allocation._t_begin;
     if (duration > 10000000L) {
-      log_info(gc)("It took over %ld to allocate memory, begin: %ld, end: %ld, tlab_fast: %ld, tlab_slow: %ld, out_tlab: %ld", duration,
-        allocation._t_begin, allocation._t_end, allocation._t_tlab_fast, allocation._t_tlab_slow, allocation._t_out_tlab);
+      log_info(gc)("It took over %ld to allocate memory, begin: %ld, end: %ld, tlab_fast: %ld, tlab_slow: %ld, out_tlab: %ld, alloc_new_tlab: %ld", duration,
+        allocation._t_begin, allocation._t_end, allocation._t_tlab_fast, allocation._t_tlab_slow, allocation._t_out_tlab, allocation._t_allocate_new_tlab);
     }
     if (mem != nullptr) {
       obj = initialize(mem);
