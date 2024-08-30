@@ -925,8 +925,8 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
 
     if (!ShenandoahAllocFailureALot || !should_inject_alloc_failure()) {
       result = allocate_memory_under_lock(req, in_new_region);
-      if(req._t_acquire_lock > 8000000) {
-        log_info(gc)("It took %ld ns to acquire heap lock.", req._t_acquire_lock);
+      if(req._t_allocate > 10000000) {
+        log_info(gc)("[*] It took %ld ns to allocate, time to acquire lock: %ld.", req._t_allocate,  req._t_acquire_lock);
       }
     }
 
@@ -960,8 +960,8 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
       while ((result == nullptr) && (original_count == shenandoah_policy()->full_gc_count())) {
         control_thread()->handle_alloc_failure(req, true);
         result = allocate_memory_under_lock(req, in_new_region);
-        if(req._t_acquire_lock > 8000000) {
-          log_info(gc)("It took %ld ns to acquire heap lock.", req._t_acquire_lock);
+        if(req._t_allocate > 10000000) {
+          log_info(gc)("It took %ld ns to allocate, time to acquire lock: %ld.", req._t_allocate,  req._t_acquire_lock);
         }
       }
       if (result != nullptr) {
