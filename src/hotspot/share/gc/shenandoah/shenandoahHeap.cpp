@@ -886,7 +886,11 @@ HeapWord* ShenandoahHeap::allocate_new_tlab(size_t min_size,
                                             size_t requested_size,
                                             size_t* actual_size) {
   ShenandoahAllocRequest req = ShenandoahAllocRequest::for_tlab(min_size, requested_size);
+  jlong begin = os::javaTimeNanos();
   HeapWord* res = allocate_memory(req);
+  if(os::javaTimeNanos() - begin > 10000000) {
+    log_info(gc)("Shenandoah allocate: %ld, time to acquire lock: %ld", req._t_allocate, req._t_acquire_lock);;
+  }
   if (res != nullptr) {
     *actual_size = req.actual_size();
   } else {
@@ -1007,8 +1011,12 @@ HeapWord* ShenandoahHeap::allocate_memory_under_lock(ShenandoahAllocRequest& req
   // We cannot block for safepoint for GC allocations, because there is a high chance
   // we are already running at safepoint or from stack watermark machinery, and we cannot
   // block again.
+  jlong begin = os::javaTimeNanos();
   ShenandoahHeapLocker locker(lock(), req.is_mutator_alloc());
-  return _free_set->allocate(req, in_new_region);
+  req._t_acquire_lock = os::javaTimeNanos() - begin;
+  HeapWord* mem = _free_set->allocate(req, in_new_region);
+  req._t_allocate = os::javaTimeNanos() - begin;
+  return mem;
 }
 
 HeapWord* ShenandoahHeap::mem_allocate(size_t size,

@@ -28,6 +28,7 @@
 #include "memory/allocation.hpp"
 
 class ShenandoahAllocRequest : StackObj {
+  friend class  ShenandoahHeap;
 public:
   enum Type {
     _alloc_shared,      // Allocate common, outside of TLAB
@@ -61,6 +62,8 @@ private:
 #ifdef ASSERT
   bool _actual_size_set;
 #endif
+  jlong _t_acquire_lock = 0L;
+  jlong _t_allocate = 0L;
 
   ShenandoahAllocRequest(size_t _min_size, size_t _requested_size, Type _alloc_type) :
           _min_size(_min_size), _requested_size(_requested_size),
