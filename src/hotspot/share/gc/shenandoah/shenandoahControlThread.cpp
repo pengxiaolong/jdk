@@ -326,6 +326,7 @@ void ShenandoahControlThread::service_concurrent_normal_cycle(GCCause::Cause cau
     assert(heap->cancelled_gc(), "Must have been cancelled");
     check_cancellation_or_degen(gc.degen_point());
   }
+  heap->reset_mark_bitmap();
 }
 
 bool ShenandoahControlThread::check_cancellation_or_degen(ShenandoahGC::ShenandoahDegenPoint point) {

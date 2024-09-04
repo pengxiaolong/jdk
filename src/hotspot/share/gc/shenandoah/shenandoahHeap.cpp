@@ -1769,8 +1769,6 @@ public:
 };
 
 void ShenandoahHeap::prepare_gc() {
-  reset_mark_bitmap();
-
   ShenandoahResetUpdateRegionStateClosure cl;
   parallel_heap_region_iterate(&cl);
 }
