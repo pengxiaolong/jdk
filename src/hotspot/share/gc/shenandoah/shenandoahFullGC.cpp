@@ -180,8 +180,8 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
       update_roots(true /*full_gc*/);
     }
 
-    // d. Reset the bitmaps for new marking
-    heap->reset_mark_bitmap();
+    // d. Reset the bitmaps for new marking, bitmap should have been reset after degenerated GC.
+    heap -> mark_incomplete_marking_context();
     assert(heap->marking_context()->is_bitmap_clear(), "sanity");
     assert(!heap->marking_context()->is_complete(), "sanity");
 
@@ -250,6 +250,7 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
 
   heap->set_full_gc_move_in_progress(false);
   heap->set_full_gc_in_progress(false);
+  heap->reset_mark_bitmap();//Reset mark bitmap after full GC.
 
   if (ShenandoahVerify) {
     heap->verifier()->verify_after_fullgc();

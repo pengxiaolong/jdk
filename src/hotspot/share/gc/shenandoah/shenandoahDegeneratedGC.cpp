@@ -214,6 +214,8 @@ void ShenandoahDegenGC::op_degenerated() {
     default:
       ShouldNotReachHere();
   }
+  // Always reset bitmap after DegeneratedGC.
+  heap->reset_mark_bitmap();
 
   if (ShenandoahVerify) {
     heap->verifier()->verify_after_degenerated();

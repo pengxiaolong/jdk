@@ -556,7 +556,6 @@ public:
 
 void ShenandoahHeap::reset_mark_bitmap() {
   assert_gc_workers(_workers->active_workers());
-  mark_incomplete_marking_context();
 
   ShenandoahResetBitmapTask task;
   _workers->run_task(&task);
@@ -1769,6 +1768,8 @@ public:
 };
 
 void ShenandoahHeap::prepare_gc() {
+  mark_incomplete_marking_context();
+
   ShenandoahResetUpdateRegionStateClosure cl;
   parallel_heap_region_iterate(&cl);
 }
