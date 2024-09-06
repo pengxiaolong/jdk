@@ -157,7 +157,6 @@ void ShenandoahPacer::setup_for_idle() {
 
 void ShenandoahPacer::setup_for_reset() {
   assert(ShenandoahPacing, "Only be here when pacing is enabled");
-
   size_t initial = _heap->max_capacity();
   restart_with(initial, 1.0);
 
@@ -189,22 +188,14 @@ void ShenandoahPacer::restart_with(size_t non_taxable_bytes, double tax_rate) {
   _need_notify_waiters.try_set();
 }
 
-bool ShenandoahPacer::claim_for_alloc(size_t words, bool force) {
+bool ShenandoahPacer::claim_for_alloc(size_t words, intptr_t &claim_epoch) {
   assert(ShenandoahPacing, "Only be here when pacing is enabled");
 
   intptr_t tax = MAX2<intptr_t>(1, words * Atomic::load(&_tax_rate));
 
-  intptr_t cur = 0;
-  intptr_t new_val = 0;
-  do {
-    cur = Atomic::load(&_budget);
-    if (cur < tax && !force) {
-      // Progress depleted, alas.
-      return false;
-    }
-    new_val = cur - tax;
-  } while (Atomic::cmpxchg(&_budget, cur, new_val, memory_order_relaxed) != cur);
-  return true;
+  intptr_t newValue = Atomic::add(&_budget, -tax, memory_order_relaxed);
+  claim_epoch = epoch();
+  return newValue < 0;
 }
 
 void ShenandoahPacer::unpace_for_alloc(intptr_t epoch, size_t words) {
@@ -223,22 +214,15 @@ intptr_t ShenandoahPacer::epoch() {
   return Atomic::load(&_epoch);
 }
 
-void ShenandoahPacer::pace_for_alloc(size_t words) {
+void ShenandoahPacer::pace_for_alloc(size_t words, intptr_t &claim_epoch) {
   assert(ShenandoahPacing, "Only be here when pacing is enabled");
 
-  // Fast path: try to allocate right away
-  bool claimed = claim_for_alloc(words, false);
-  if (claimed) {
+
+  bool claimed_in_debt = claim_for_alloc(words, claim_epoch);
+  // Fast path - not claimed in debut: try to allocate right away
+  if (!claimed_in_debt) {
     return;
   }
-
-  // Forcefully claim the budget: it may go negative at this point, and
-  // GC should replenish for this and subsequent allocations. After this claim,
-  // we would wait a bit until our claim is matched by additional progress,
-  // or the time budget depletes.
-  claimed = claim_for_alloc(words, true);
-  assert(claimed, "Should always succeed");
-
   // Threads that are attaching should not block at all: they are not
   // fully initialized yet. Blocking them would be awkward.
   // This is probably the path that allocates the thread oop itself.
@@ -259,8 +243,7 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
 
   while (true) {
     // We could instead assist GC, but this would suffice for now.
-    size_t cur_ms = (max_ms > total_ms) ? (max_ms - total_ms) : 1;
-    wait(cur_ms);
+    wait(1);
 
     double end = os::elapsedTime();
     total_ms = (size_t)((end - start) * 1000);
