@@ -107,8 +107,8 @@ public:
 
   inline void report_alloc(size_t words);
 
-  bool claim_for_alloc(size_t words, intptr_t &claim_epoch);
-  void pace_for_alloc(size_t words, intptr_t &claim_epoch);
+  bool claim_for_alloc(size_t words, bool force);
+  void pace_for_alloc(size_t words);
   void unpace_for_alloc(intptr_t epoch, size_t words);
 
   void notify_waiters();

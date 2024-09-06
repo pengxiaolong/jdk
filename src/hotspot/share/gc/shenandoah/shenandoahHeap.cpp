@@ -693,8 +693,7 @@ void ShenandoahHeap::notify_mutator_alloc_words(size_t words, bool waste) {
   if (ShenandoahPacing) {
     control_thread()->pacing_notify_alloc(words);
     if (waste) {
-      intptr_t claim_epoch;
-      pacer()->claim_for_alloc(words, claim_epoch);
+      pacer()->claim_for_alloc(words, true);
     }
   }
 }
@@ -921,7 +920,8 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
   if (req.is_mutator_alloc()) {
     if (ShenandoahPacing) {
       jlong start = os::javaTimeNanos();
-      pacer()->pace_for_alloc(req.size(), pacer_epoch);
+      pacer()->pace_for_alloc(req.size());
+      pacer_epoch = pacer()->epoch();
       jlong duration = os::javaTimeNanos() - start;
       if(duration > 1000000) {
           log_info(gc)("[ShenandoahPacing] pace_for_alloc took %ld ns.", duration);
