@@ -421,7 +421,12 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(size_t word_size) {
     uint gc_count_before;
 
     {
+      jlong t1 = os::javaTimeNanos();
       MutexLocker x(Heap_lock);
+      jlong t2 = os::javaTimeNanos();
+      if (t2 - t1 > 10000000) {
+        log_info(gc)("MutexLocker x(Heap_lock) took over 10ms");
+      }
 
       // Now that we have the lock, we first retry the allocation in case another
       // thread changed the region while we were waiting to acquire the lock.
@@ -585,14 +590,18 @@ inline HeapWord* G1CollectedHeap::attempt_allocation(size_t min_word_size,
   assert_heap_not_locked_and_not_at_safepoint();
   assert(!is_humongous(desired_word_size), "attempt_allocation() should not "
          "be called for humongous allocation requests");
-
+  jlong begin = os::javaTimeNanos();
   HeapWord* result = _allocator->attempt_allocation(min_word_size, desired_word_size, actual_word_size);
-
+  jlong fast_allocation = os::javaTimeNanos();
+  jlong slow_allocation = 0;
   if (result == nullptr) {
     *actual_word_size = desired_word_size;
     result = attempt_allocation_slow(desired_word_size);
+    slow_allocation = os::javaTimeNanos();
   }
-
+  if (os::javaTimeNanos() - begin > 10000000) {
+    log_info(gc)("G1CollectedHeap::attempt_allocation, begin: %ld, fast_allocation %ld, slow_allocation %ld", begin, fast_allocation, slow_allocation);
+  }
   assert_heap_not_locked();
   if (result != nullptr) {
     assert(*actual_word_size != 0, "Actual size must have been set here");
