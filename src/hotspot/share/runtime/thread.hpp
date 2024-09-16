@@ -264,6 +264,7 @@ class Thread: public ThreadShadow {
   friend class GCLocker;
 
  private:
+  jlong _time_to_acquire_lock = 0;
   ThreadLocalAllocBuffer _tlab;                 // Thread-local eden
   jlong _allocated_bytes;                       // Cumulative number of bytes allocated on
                                                 // the Java heap
@@ -306,6 +307,14 @@ class Thread: public ThreadShadow {
  public:
   // invokes <ChildThreadClass>::run(), with common preparations and cleanups.
   void call_run();
+
+  void set_time_to_acquire_lock(jlong timestamp) {
+    _time_to_acquire_lock = timestamp;
+  }
+
+  jlong get_time_to_acquire_lock() const {
+    return _time_to_acquire_lock;
+  }
 
   // Testers
   virtual bool is_VM_thread()       const            { return false; }

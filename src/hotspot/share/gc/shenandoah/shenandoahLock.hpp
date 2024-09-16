@@ -39,7 +39,10 @@ private:
   shenandoah_padding(1);
   Thread* volatile _owner;
   shenandoah_padding(2);
-  jlong _t_acquire;
+  jlong _time_acquired;
+  uint _lock_yields = 0;
+  uint _lock_tbivm = 0;
+  uint _lock_spins = 0;
 
   template<bool ALLOW_BLOCK>
   void contended_lock_internal(JavaThread* java_thread);
@@ -48,7 +51,7 @@ public:
 
   void lock(bool allow_block_for_safepoint) {
     assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
-
+    Thread::current()->set_time_to_acquire_lock(os::javaTimeNanos());
     if ((allow_block_for_safepoint && SafepointSynchronize::is_synchronizing()) ||
         (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked)) {
       // 1. Java thread, and there is a pending safepoint. Dive into contended locking
@@ -60,19 +63,30 @@ public:
     assert(Atomic::load(&_state) == locked, "must be locked");
     assert(Atomic::load(&_owner) == nullptr, "must not be owned");
     DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
-    _t_acquire = os::javaTimeNanos();
+    _time_acquired = os::javaTimeNanos();
   }
 
   void unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
-    jlong holding_duration = os::javaTimeNanos() - _t_acquire;
     OrderAccess::fence();
-    Atomic::store(&_state, unlocked);
-    if( holding_duration > 10000000) {
+    const jlong t = _time_acquired - Thread::current()->get_time_to_acquire_lock();
+    if( t > 1000000)
+    {
+      jlong time_to_release = os::javaTimeNanos();
+      jlong holding_duration = time_to_release - _time_acquired;
       ResourceMark rm;
-      log_info(gc)("Thread %s released heap lock afer holding for %ld ns", Thread::current()->is_Java_thread() ? "Java" : Thread::current()->name(), holding_duration);
+      log_info(gc)("Thread %s released heap lock afer holding for %ld ns, took %ld ns to acquire, %i yields, %i tbivm, %i spins.",
+        //Timestamp acquire lock: %ld, timestamp acquired lock: %ld, timestamp to release lock: %ld
+        Thread::current()->is_Java_thread() ? "JavaThread" : Thread::current()->name(),
+        holding_duration,
+        t,
+        _lock_yields,
+        _lock_tbivm,
+        _lock_spins
+        );
     }
+    Atomic::store(&_state, unlocked);
   }
 
   void contended_lock(bool allow_block_for_safepoint);

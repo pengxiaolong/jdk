@@ -46,6 +46,9 @@ void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
   assert(!ALLOW_BLOCK || java_thread != nullptr, "Must have a Java thread when allowing block.");
   // Spin this much, but only on multi-processor systems.
   int ctr = os::is_MP() ? 0xFF : 0;
+  uint lock_yields = 0;
+  uint lock_tbivm = 0;
+  uint lock_spins = 0;
   // Apply TTAS to avoid more expensive CAS calls if the lock is still held by other thread.
   while (Atomic::load(&_state) == locked ||
          Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
@@ -53,8 +56,10 @@ void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
       // Lightly contended, spin a little if no safepoint is pending.
       SpinPause();
       ctr--;
+      lock_spins++;
     } else if (ALLOW_BLOCK) {
       ThreadBlockInVM block(java_thread);
+      lock_tbivm ++;
       if (SafepointSynchronize::is_synchronizing()) {
         // If safepoint is pending, we want to block and allow safepoint to proceed.
         // Normally, TBIVM above would block us in its destructor.
@@ -72,11 +77,16 @@ void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
         }
       } else {
         os::naked_yield();
+        lock_yields ++;
       }
     } else {
       os::naked_yield();
+      lock_yields ++;
     }
   }
+  _lock_yields = lock_yields;
+  _lock_tbivm = lock_tbivm;
+  _lock_spins = lock_spins;
 }
 
 ShenandoahSimpleLock::ShenandoahSimpleLock() {
