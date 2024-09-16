@@ -276,13 +276,17 @@ HeapWord* ParallelScavengeHeap::mem_allocate(size_t size,
 HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
                                                   bool is_tlab,
                                                   bool* gc_overhead_limit_was_exceeded) {
-
   // In general gc_overhead_limit_was_exceeded should be false so
   // set it so here and reset it to true only if the gc time
   // limit is being exceeded as checked below.
   *gc_overhead_limit_was_exceeded = false;
 
+  const jlong t1 = os::javaTimeNanos();
   HeapWord* result = young_gen()->allocate(size);
+  const jlong t2 = os::javaTimeNanos();
+  if (t2 - t1 > 10000000) {
+    log_info(gc)("young_gen()->allocate(size) took over 10ms");
+  }
 
   uint loop_count = 0;
   uint gc_count = 0;
@@ -301,7 +305,12 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     // The policy MUST attempt allocations during the same period it reads the
     // total_collections() value!
     {
+      const jlong t1 = os::javaTimeNanos();
       MutexLocker ml(Heap_lock);
+      const jlong t2 = os::javaTimeNanos();
+      if (t2 - t1 > 10000000) {
+        log_info(gc)("MutexLocker x(Heap_lock) took over 10ms");
+      }
       gc_count = total_collections();
 
       result = young_gen()->allocate(size);
@@ -311,7 +320,12 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
 
       // If certain conditions hold, try allocating from the old gen.
       if (!is_tlab) {
+        const jlong t1 = os::javaTimeNanos();
         result = mem_allocate_old_gen(size);
+        const jlong t2 = os::javaTimeNanos();
+        if (t2 - t1 > 10000000) {
+          log_info(gc)("mem_allocate_old_gen(size) took over 10ms");
+        }
         if (result != nullptr) {
           return result;
         }
@@ -347,8 +361,13 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
 
     if (result == nullptr) {
       // Generate a VM operation
+      const jlong t1 = os::javaTimeNanos();
       VM_ParallelCollectForAllocation op(size, is_tlab, gc_count);
       VMThread::execute(&op);
+      const jlong t2 = os::javaTimeNanos();
+      if (t2 - t1 > 10000000) {
+        log_info(gc)("VMThread::execute(&op) took over 10ms");
+      }
 
       // Did the VM operation execute? If so, return the result directly.
       // This prevents us from looping until time out on requests that can
