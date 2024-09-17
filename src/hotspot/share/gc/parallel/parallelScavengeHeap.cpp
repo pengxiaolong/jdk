@@ -360,6 +360,9 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     }
 
     if (result == nullptr) {
+      if (total_collections() != gc_count) {
+        continue;
+      }
       // Generate a VM operation
       const jlong t1 = os::javaTimeNanos();
       VM_ParallelCollectForAllocation op(size, is_tlab, gc_count);
