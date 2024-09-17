@@ -84,6 +84,8 @@ class ParallelScavengeHeap : public CollectedHeap {
 
   WorkerThreads _workers;
 
+  volatile bool _is_parallel_collect_running_for_allocation;
+
   void initialize_serviceability() override;
 
   void trace_actual_reserved_page_size(const size_t reserved_heap_size, const ReservedSpace rs);
@@ -120,7 +122,8 @@ public:
     _eden_pool(nullptr),
     _survivor_pool(nullptr),
     _old_pool(nullptr),
-    _workers("GC Thread", ParallelGCThreads) { }
+    _workers("GC Thread", ParallelGCThreads),
+    _is_parallel_collect_running_for_allocation(false) { }
 
   Name kind() const override {
     return CollectedHeap::Parallel;

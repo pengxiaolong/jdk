@@ -22,6 +22,8 @@
  *
  */
 
+#include <runtime/interfaceSupport.inline.hpp>
+
 #include "precompiled.hpp"
 #include "gc/parallel/objectStartArray.inline.hpp"
 #include "gc/parallel/parallelArguments.hpp"
@@ -346,9 +348,16 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     }
 
     if (result == nullptr) {
+      if (total_collections() != gc_count) continue;
+
+      if (Atomic::load(&_is_parallel_collect_running_for_allocation) ||
+        Atomic::cmpxchg(&_is_parallel_collect_running_for_allocation, false, true) == true) {
+        continue;
+      }
       // Generate a VM operation
       VM_ParallelCollectForAllocation op(size, is_tlab, gc_count);
       VMThread::execute(&op);
+      Atomic::store(&_is_parallel_collect_running_for_allocation, false);
 
       // Did the VM operation execute? If so, return the result directly.
       // This prevents us from looping until time out on requests that can
