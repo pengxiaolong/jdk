@@ -322,31 +322,9 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
       if (gclocker_stalled_count > GCLockerRetryAllocationCount) {
         return nullptr;
       }
-
-      // Failed to allocate without a gc.
-      if (GCLocker::is_active_and_needs_gc()) {
-        // If this thread is not in a jni critical section, we stall
-        // the requestor until the critical section has cleared and
-        // GC allowed. When the critical section clears, a GC is
-        // initiated by the last thread exiting the critical section; so
-        // we retry the allocation sequence from the beginning of the loop,
-        // rather than causing more, now probably unnecessary, GC attempts.
-        JavaThread* jthr = JavaThread::current();
-        if (!jthr->in_critical()) {
-          MutexUnlocker mul(Heap_lock);
-          GCLocker::stall_until_clear();
-          gclocker_stalled_count += 1;
-          continue;
-        } else {
-          if (CheckJNICalls) {
-            fatal("Possible deadlock due to allocating while"
-                  " in jni critical section");
-          }
-          return nullptr;
-        }
-      }
     }
 
+    // Failed to allocate without a gc.
     if (result == nullptr) {
       if (total_collections() == gc_count &&
           Atomic::load(&_is_parallel_collect_running_for_allocation) == false &&
@@ -366,7 +344,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
           // and/or stall as necessary.
           if (op.gc_locked()) {
             assert(op.result() == nullptr, "must be null if gc_locked() is true");
-            continue;  // retry and/or stall as necessary
+            continue; // retry and/or stall as necessary
           }
 
           // Exit the loop if the gc time limit has been exceeded.
@@ -395,6 +373,23 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
 
           return op.result();
         }
+      } else if (GCLocker::is_active_and_needs_gc()) {
+        // If this thread is not in a jni critical section, we stall
+        // the requestor until the critical section has cleared and
+        // GC allowed. When the critical section clears, a GC is
+        // initiated by the last thread exiting the critical section; so
+        // we retry the allocation sequence from the beginning of the loop,
+        // rather than causing more, now probably unnecessary, GC attempts.
+        JavaThread *jthr = JavaThread::current();
+        if (!jthr->in_critical()) {
+          GCLocker::stall_until_clear();
+          gclocker_stalled_count += 1;
+        }
+        if (CheckJNICalls) {
+          fatal("Possible deadlock due to allocating while"
+            " in jni critical section");
+        }
+        return nullptr;
       }
     }
 
