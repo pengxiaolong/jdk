@@ -348,55 +348,53 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     }
 
     if (result == nullptr) {
-      if (total_collections() != gc_count) continue;
+      if (total_collections() == gc_count &&
+          Atomic::load(&_is_parallel_collect_running_for_allocation) == false &&
+          Atomic::cmpxchg(&_is_parallel_collect_running_for_allocation, false, true, memory_order_relaxed) == false) {
+        // Generate a VM operation
+        VM_ParallelCollectForAllocation op(size, is_tlab, gc_count);
+        VMThread::execute(&op);
+        Atomic::store(&_is_parallel_collect_running_for_allocation, false);
 
-      if (Atomic::load(&_is_parallel_collect_running_for_allocation) ||
-        Atomic::cmpxchg(&_is_parallel_collect_running_for_allocation, false, true) == true) {
-        continue;
-      }
-      // Generate a VM operation
-      VM_ParallelCollectForAllocation op(size, is_tlab, gc_count);
-      VMThread::execute(&op);
-      Atomic::store(&_is_parallel_collect_running_for_allocation, false);
+        // Did the VM operation execute? If so, return the result directly.
+        // This prevents us from looping until time out on requests that can
+        // not be satisfied.
+        if (op.prologue_succeeded()) {
+          assert(is_in_or_null(op.result()), "result not in heap");
 
-      // Did the VM operation execute? If so, return the result directly.
-      // This prevents us from looping until time out on requests that can
-      // not be satisfied.
-      if (op.prologue_succeeded()) {
-        assert(is_in_or_null(op.result()), "result not in heap");
-
-        // If GC was locked out during VM operation then retry allocation
-        // and/or stall as necessary.
-        if (op.gc_locked()) {
-          assert(op.result() == nullptr, "must be null if gc_locked() is true");
-          continue;  // retry and/or stall as necessary
-        }
-
-        // Exit the loop if the gc time limit has been exceeded.
-        // The allocation must have failed above ("result" guarding
-        // this path is null) and the most recent collection has exceeded the
-        // gc overhead limit (although enough may have been collected to
-        // satisfy the allocation).  Exit the loop so that an out-of-memory
-        // will be thrown (return a null ignoring the contents of
-        // op.result()),
-        // but clear gc_overhead_limit_exceeded so that the next collection
-        // starts with a clean slate (i.e., forgets about previous overhead
-        // excesses).  Fill op.result() with a filler object so that the
-        // heap remains parsable.
-        const bool limit_exceeded = size_policy()->gc_overhead_limit_exceeded();
-        const bool softrefs_clear = soft_ref_policy()->all_soft_refs_clear();
-
-        if (limit_exceeded && softrefs_clear) {
-          *gc_overhead_limit_was_exceeded = true;
-          size_policy()->set_gc_overhead_limit_exceeded(false);
-          log_trace(gc)("ParallelScavengeHeap::mem_allocate: return null because gc_overhead_limit_exceeded is set");
-          if (op.result() != nullptr) {
-            CollectedHeap::fill_with_object(op.result(), size);
+          // If GC was locked out during VM operation then retry allocation
+          // and/or stall as necessary.
+          if (op.gc_locked()) {
+            assert(op.result() == nullptr, "must be null if gc_locked() is true");
+            continue;  // retry and/or stall as necessary
           }
-          return nullptr;
-        }
 
-        return op.result();
+          // Exit the loop if the gc time limit has been exceeded.
+          // The allocation must have failed above ("result" guarding
+          // this path is null) and the most recent collection has exceeded the
+          // gc overhead limit (although enough may have been collected to
+          // satisfy the allocation).  Exit the loop so that an out-of-memory
+          // will be thrown (return a null ignoring the contents of
+          // op.result()),
+          // but clear gc_overhead_limit_exceeded so that the next collection
+          // starts with a clean slate (i.e., forgets about previous overhead
+          // excesses).  Fill op.result() with a filler object so that the
+          // heap remains parsable.
+          const bool limit_exceeded = size_policy()->gc_overhead_limit_exceeded();
+          const bool softrefs_clear = soft_ref_policy()->all_soft_refs_clear();
+
+          if (limit_exceeded && softrefs_clear) {
+            *gc_overhead_limit_was_exceeded = true;
+            size_policy()->set_gc_overhead_limit_exceeded(false);
+            log_trace(gc)("ParallelScavengeHeap::mem_allocate: return null because gc_overhead_limit_exceeded is set");
+            if (op.result() != nullptr) {
+              CollectedHeap::fill_with_object(op.result(), size);
+            }
+            return nullptr;
+          }
+
+          return op.result();
+        }
       }
     }
 
