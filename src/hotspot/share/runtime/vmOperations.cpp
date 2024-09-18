@@ -63,6 +63,10 @@ void VM_Operation::set_calling_thread(Thread* thread) {
   _calling_thread = thread;
 }
 
+void VM_Operation::set_executed_signal(Semaphore* executed_signal) {
+  _executed_signal = executed_signal;
+}
+
 void VM_Operation::evaluate() {
   ResourceMark rm;
   LogTarget(Debug, vmoperation) lt;
