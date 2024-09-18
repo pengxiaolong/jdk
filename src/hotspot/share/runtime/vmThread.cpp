@@ -108,6 +108,7 @@ VM_Operation*     VMThread::_cur_vm_operation   = nullptr;
 VM_Operation*     VMThread::_next_vm_operation  = &no_op; // Prevent any thread from setting an operation until VM thread is ready.
 PerfCounter*      VMThread::_perf_accumulated_vm_operation_time = nullptr;
 VMOperationTimeoutTask* VMThread::_timeout_task = nullptr;
+Semaphore*         VMThread::_operation_executed_signal = new Semaphore(0);
 
 
 void VMThread::create() {
@@ -343,14 +344,12 @@ bool VMThread::set_next_operation(VM_Operation *op) {
 }
 
 void VMThread::wait_until_executed(VM_Operation* op) {
-  MonitorLocker ml(VMOperation_lock,
-                   Thread::current()->is_Java_thread() ?
-                     Mutex::_safepoint_check_flag :
-                     Mutex::_no_safepoint_check_flag);
-  Semaphore executed_signal(0);
-  op->set_executed_signal(&executed_signal);
   jlong start = os::javaTimeNanos();
   {
+    MonitorLocker ml(VMOperation_lock,
+           Thread::current()->is_Java_thread() ?
+             Mutex::_safepoint_check_flag :
+             Mutex::_no_safepoint_check_flag);
     TraceTime timer("Installing VM operation", TRACETIME_LOG(Trace, vmthread));
     while (true) {
       if (VMThread::vm_thread()->set_next_operation(op)) {
@@ -368,13 +367,21 @@ void VMThread::wait_until_executed(VM_Operation* op) {
     TraceTime timer("Waiting for VM operation to be completed", TRACETIME_LOG(Trace, vmthread));
     // _next_vm_operation is cleared holding VMOperation_lock after it has been
     // executed. We wait until _next_vm_operation is not our op.
+    // while (_next_vm_operation == op) {
+    //   // VM Thread can process it once we unlock the mutex on wait.
+    //   ml.wait(1);
+    // }
+
     if (_next_vm_operation == op) {
+      jlong start = os::javaTimeNanos();
       if (current()->is_Java_thread()) {
         ThreadBlockInVM tbivm(JavaThread::current());
-        op->executed_signal()->wait();
+        _operation_executed_signal->wait();
+
       } else {
-        op->executed_signal()->wait();
+        _operation_executed_signal->wait();
       }
+      log_info(gc)("_operation_executed_signal.wait %ld", os::javaTimeNanos() - start);
     }
   }
   jlong t_vm_op_executed = os::javaTimeNanos();
@@ -454,6 +461,7 @@ void VMThread::wait_for_operation() {
   // Clear previous operation.
   // On first call this clears a dummy place-holder.
   _next_vm_operation = nullptr;
+
   // Notify operation is done and notify a next operation can be installed.
   log_info(gc)("VMThread notify_all waiter on VMOperation_lock.");
   ml_op_lock.notify_all();
@@ -504,9 +512,8 @@ void VMThread::loop() {
     assert(_next_vm_operation != nullptr, "Must have one");
     jlong start = os::javaTimeNanos();
     inner_execute(_next_vm_operation);
-    if (_next_vm_operation->executed_signal() != nullptr) {
-      _next_vm_operation->executed_signal()->signal();
-    }
+    _next_vm_operation = &no_op;
+    _operation_executed_signal->signal();
     jlong end = os::javaTimeNanos();
     log_info(gc)("VMThread executed %s in %ld ns", _next_vm_operation->name(), end - start);
   }

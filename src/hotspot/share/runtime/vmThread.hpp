@@ -70,6 +70,9 @@ class VMThread: public NamedThread {
 
   static VMOperationTimeoutTask* _timeout_task;
 
+  static Semaphore* _operation_executed_signal;
+
+
   static bool handshake_or_safepoint_alot();
 
   void evaluate_operation(VM_Operation* op);
