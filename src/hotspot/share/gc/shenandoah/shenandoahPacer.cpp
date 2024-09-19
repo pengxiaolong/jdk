@@ -203,7 +203,7 @@ bool ShenandoahPacer::claim_for_alloc(size_t words, bool force) {
       return false;
     }
     new_val = cur - tax;
-  } while (Atomic::load(&_budget) == cur && Atomic::cmpxchg(&_budget, cur, new_val, memory_order_relaxed) != cur);
+  } while (Atomic::cmpxchg(&_budget, cur, new_val, memory_order_relaxed) != cur);
   return true;
 }
 
@@ -232,6 +232,13 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
     return;
   }
 
+  // Forcefully claim the budget: it may go negative at this point, and
+  // GC should replenish for this and subsequent allocations. After this claim,
+  // we would wait a bit until our claim is matched by additional progress,
+  // or the time budget depletes.
+  claimed = claim_for_alloc(words, true);
+  assert(claimed, "Should always succeed");
+
   // Threads that are attaching should not block at all: they are not
   // fully initialized yet. Blocking them would be awkward.
   // This is probably the path that allocates the thread oop itself.
@@ -242,8 +249,6 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
   JavaThread* current = JavaThread::current();
   if (current->is_attaching_via_jni() ||
       !current->is_active_Java_thread()) {
-    claimed = claim_for_alloc(words, true);
-    assert(claimed, "Should always succeed");
     return;
   }
 
@@ -254,25 +259,20 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
 
   while (true) {
     // We could instead assist GC, but this would suffice for now.
-    wait(1);
+    size_t cur_ms = (max_ms > total_ms) ? (max_ms - total_ms) : 1;
+    wait(cur_ms);
 
     double end = os::elapsedTime();
     total_ms = (size_t)((end - start) * 1000);
 
-    if (total_ms > max_ms) {
+    if (total_ms > max_ms || Atomic::load(&_budget) >= 0) {
       // Exiting if either:
       //  a) Spent local time budget to wait for enough GC progress.
       //     Breaking out and allocating anyway, which may mean we outpace GC,
       //     and start Degenerated GC cycle.
       //  b) The budget had been replenished, which means our claim is satisfied.
       ShenandoahThreadLocalData::add_paced_time(JavaThread::current(), end - start);
-      claim_for_alloc(words, true);
-      return;
-    }
-
-    claimed = claim_for_alloc(words, false);
-    if (claimed) {
-      return;
+      break;
     }
   }
 }
