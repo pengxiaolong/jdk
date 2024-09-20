@@ -71,7 +71,7 @@ public:
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
     OrderAccess::fence();
     const jlong t = _time_acquired - Thread::current()->get_time_to_acquire_lock();
-    if( t > 1000000)
+/*    if( t > 1000000)
     {
       jlong time_to_release = os::javaTimeNanos();
       jlong holding_duration = time_to_release - _time_acquired;
@@ -86,6 +86,7 @@ public:
         _lock_spins
         );
     }
+*/
     Atomic::store(&_state, unlocked);
   }
 
