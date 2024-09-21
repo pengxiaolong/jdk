@@ -27,6 +27,9 @@
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc/shenandoah/shenandoahPacer.hpp"
+
+#include <runtime/interfaceSupport.inline.hpp>
+
 #include "gc/shenandoah/shenandoahPhaseTimings.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/javaThread.inline.hpp"
@@ -229,6 +232,7 @@ intptr_t ShenandoahPacer::epoch() {
 
 void ShenandoahPacer::pace_for_alloc(size_t words) {
   assert(ShenandoahPacing, "Only be here when pacing is enabled");
+  ThreadBlockInVM tbivm(JavaThread::current());
 
   // Fast path: try to allocate right away
   bool claimed = claim_for_alloc<false>(words);
@@ -272,7 +276,7 @@ void ShenandoahPacer::wait(size_t time_ms) {
   // the thread interruptible status. MonitorLocker also checks for safepoints.
   assert(time_ms > 0, "Should not call this with zero argument, as it would stall until notify");
   assert(time_ms <= LONG_MAX, "Sanity");
-  MonitorLocker locker(_wait_monitor);
+  MonitorLocker locker(_wait_monitor, Mutex::_no_safepoint_check_flag);
   _wait_monitor->wait((long)time_ms);
 }
 

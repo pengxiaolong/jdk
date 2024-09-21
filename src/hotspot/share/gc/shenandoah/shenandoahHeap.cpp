@@ -915,7 +915,6 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
 
   if (req.is_mutator_alloc()) {
     if (ShenandoahPacing) {
-      ThreadBlockInVM tbivm(JavaThread::current());
       pacer()->pace_for_alloc(req.size());
       pacer_epoch = pacer()->epoch();
     }
