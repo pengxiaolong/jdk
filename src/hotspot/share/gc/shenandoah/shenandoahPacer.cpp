@@ -232,7 +232,6 @@ intptr_t ShenandoahPacer::epoch() {
 
 void ShenandoahPacer::pace_for_alloc(size_t words) {
   assert(ShenandoahPacing, "Only be here when pacing is enabled");
-  ThreadBlockInVM tbivm(JavaThread::current());
 
   // Fast path: try to allocate right away
   bool claimed = claim_for_alloc<false>(words);
@@ -254,21 +253,24 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
     return;
   }
 
-  jlong const max_delay = ShenandoahPacingMaxDelay * NANOSECS_PER_MILLISEC;
-  jlong const start_time = os::elapsed_counter();
-  while (!claimed && (os::elapsed_counter() - start_time) < max_delay) {
-    // We could instead assist GC, but this would suffice for now.
-    wait(1);
-    claimed = claim_for_alloc<false>(words);
+  {
+    ThreadBlockInVM tbivm(JavaThread::current());
+    jlong const max_delay = ShenandoahPacingMaxDelay * NANOSECS_PER_MILLISEC;
+    jlong const start_time = os::elapsed_counter();
+    while (!claimed && (os::elapsed_counter() - start_time) < max_delay) {
+      // We could instead assist GC, but this would suffice for now.
+      wait(1);
+      claimed = claim_for_alloc<false>(words);
+    }
+    if (!claimed) {
+      // Spent local time budget to wait for enough GC progress.
+      // Force allocating anyway, which may mean we outpace GC,
+      // and start Degenerated GC cycle.
+      claimed = claim_for_alloc<true>(words);
+      assert(claimed, "Should always succeed");
+    }
+    ShenandoahThreadLocalData::add_paced_time(current, (double)(os::elapsed_counter() - start_time) / NANOSECS_PER_SEC);
   }
-  if (!claimed) {
-    // Spent local time budget to wait for enough GC progress.
-    // Force allocating anyway, which may mean we outpace GC,
-    // and start Degenerated GC cycle.
-    claimed = claim_for_alloc<true>(words);
-    assert(claimed, "Should always succeed");
-  }
-  ShenandoahThreadLocalData::add_paced_time(current, (double)(os::elapsed_counter() - start_time) / NANOSECS_PER_SEC);
 }
 
 void ShenandoahPacer::wait(size_t time_ms) {

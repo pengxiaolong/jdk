@@ -85,7 +85,7 @@ public:
           _heap(heap),
           _last_time(os::elapsedTime()),
           _progress_history(new TruncatedSeq(5)),
-          _wait_monitor(new Monitor(Mutex::safepoint-1, "ShenandoahWaitMonitor_lock", true)),
+          _wait_monitor(new Monitor(Mutex::safepoint, "ShenandoahWaitMonitor_lock", true)),
           _notify_waiters_task(this),
           _epoch(0),
           _tax_rate(1),
