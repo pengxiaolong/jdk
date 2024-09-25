@@ -47,16 +47,13 @@ float AdaptiveWeightedAverage::compute_adaptive_average(float new_sample,
   return new_avg;
 }
 
-float AdaptiveWeightedAverage::sample(float new_sample) {
+void AdaptiveWeightedAverage::sample(float new_sample) {
   increment_count();
-  float old_avg;
-  float new_avg;
-  do {
-    old_avg = average();
-    new_avg = compute_adaptive_average(new_sample, old_avg);
-  } while (!cas_set_average(new_avg, old_avg));
+
+  // Compute the new weighted average
+  float new_avg = compute_adaptive_average(new_sample, average());
+  set_average(new_avg);
   _last_sample = new_sample;
-  return new_avg;
 }
 
 void AdaptiveWeightedAverage::print() const {
@@ -85,9 +82,10 @@ void AdaptivePaddedNoZeroDevAverage::print_on(outputStream* st) const {
 
 void AdaptivePaddedAverage::sample(float new_sample) {
   // Compute new adaptive weighted average based on new sample.
-  float new_avg = AdaptiveWeightedAverage::sample(new_sample);
+  AdaptiveWeightedAverage::sample(new_sample);
 
   // Now update the deviation and the padded average.
+  float new_avg = average();
   float new_dev = compute_adaptive_average(fabs(new_sample - new_avg),
                                            deviation());
   set_deviation(new_dev);

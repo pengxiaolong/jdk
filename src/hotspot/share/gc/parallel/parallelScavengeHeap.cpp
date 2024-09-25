@@ -355,13 +355,17 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
 
     if (result == nullptr) {
       //Some other mutator thread trigged collection, check safepoint and yield the CPU.
-      ThreadBlockInVM tbivm(jthr);
       if (!VM_CollectForAllocation::try_trigger_collect_for_allocation()) {
-        while (VM_CollectForAllocation::is_collect_for_allocation_triggered() && !SafepointSynchronize::is_synchronizing()) {
+        ThreadBlockInVM tbivm(jthr);
+        while (VM_CollectForAllocation::is_collect_for_allocation_triggered() &&
+               !SafepointSynchronize::is_synchronizing()) {
           os::naked_yield();
         }
-        if (VM_CollectForAllocation::is_collect_for_allocation_triggered() && SafepointSynchronize::is_synchronizing()) {
-          while (VM_CollectForAllocation::is_collect_for_allocation_triggered() && SafepointSynchronize::is_synchronizing() && !SafepointMechanism::local_poll_armed(jthr)) {
+        if (VM_CollectForAllocation::is_collect_for_allocation_triggered() &&
+            SafepointSynchronize::is_synchronizing()) {
+          while (VM_CollectForAllocation::is_collect_for_allocation_triggered() &&
+                 SafepointSynchronize::is_synchronizing() &&
+                 !SafepointMechanism::local_poll_armed(jthr)) {
             os::naked_yield();
           }
         }

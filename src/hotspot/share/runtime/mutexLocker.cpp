@@ -55,7 +55,8 @@ Monitor* EscapeBarrier_lock           = nullptr;
 Monitor* JvmtiVTMSTransition_lock     = nullptr;
 Monitor* Heap_lock                    = nullptr;
 #ifdef INCLUDE_PARALLELGC
-Mutex*   PSOldGenExpand_lock      = nullptr;
+Mutex*   PSOldGenExpand_lock          = nullptr;
+Mutex*   PSSyncOp_lock                = nullptr;
 #endif
 Mutex*   AdapterHandlerLibrary_lock   = nullptr;
 Mutex*   SignatureHandlerLibrary_lock = nullptr;
@@ -345,6 +346,7 @@ void mutex_init() {
 #ifdef INCLUDE_PARALLELGC
   if (UseParallelGC) {
     MUTEX_DEFL(PSOldGenExpand_lock          , PaddedMutex  , Heap_lock, true);
+    MUTEX_DEFL(PSHeapSyncOp_lock            , PaddedMutex  , Heap_lock, true);
   }
 #endif
   MUTEX_DEFL(Module_lock                    , PaddedMutex  ,  ClassLoaderDataGraph_lock);
