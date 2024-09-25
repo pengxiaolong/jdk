@@ -205,6 +205,10 @@ void VM_CollectForAllocation::unset_collect_for_allocation_triggered() {
   Atomic::store(&_collect_for_allocation_triggered, false);
 }
 
+bool VM_CollectForAllocation::is_collect_for_allocation_triggered() {
+  return Atomic::load(&_collect_for_allocation_triggered);
+}
+
 
 VM_CollectForMetadataAllocation::VM_CollectForMetadataAllocation(ClassLoaderData* loader_data,
                                                                  size_t size,

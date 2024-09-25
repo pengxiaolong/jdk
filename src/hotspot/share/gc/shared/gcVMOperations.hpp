@@ -195,6 +195,8 @@ class VM_CollectForAllocation : public VM_GC_Operation {
   static bool try_trigger_collect_for_allocation();
 
   static void unset_collect_for_allocation_triggered();
+
+  static bool is_collect_for_allocation_triggered();
 };
 
 class VM_CollectForMetadataAllocation: public VM_GC_Operation {
