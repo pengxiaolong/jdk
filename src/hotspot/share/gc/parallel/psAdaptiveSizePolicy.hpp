@@ -189,7 +189,6 @@ class PSAdaptiveSizePolicy : public AdaptiveSizePolicy {
   void major_collection_end(size_t amount_live, GCCause::Cause gc_cause);
 
   void tenured_allocation(size_t size) {
-    MutexLocker ml(PSHeapSyncOp_lock);
     _avg_pretenured->sample(size);
   }
 
