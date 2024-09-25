@@ -354,11 +354,16 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     }
 
     if (result == nullptr) {
+      //Some other mutator thread trigged collection, check safepoint and yield the CPU.
+      ThreadBlockInVM tbivm(jthr);
       if (!VM_CollectForAllocation::try_trigger_collect_for_allocation()) {
-        //Some other mutator thread trigged collection, check safepoint and yield the CPU.
-        ThreadBlockInVM tbivm(jthr);
-        while (VM_CollectForAllocation::is_collect_for_allocation_triggered()) {
+        while (VM_CollectForAllocation::is_collect_for_allocation_triggered() && !SafepointSynchronize::is_synchronizing()) {
           os::naked_yield();
+        }
+        if (VM_CollectForAllocation::is_collect_for_allocation_triggered() && SafepointSynchronize::is_synchronizing()) {
+          while (VM_CollectForAllocation::is_collect_for_allocation_triggered() && SafepointSynchronize::is_synchronizing() && !SafepointMechanism::local_poll_armed(jthr)) {
+            os::naked_yield();
+          }
         }
         continue;
       }
@@ -431,20 +436,21 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
   return result;
 }
 
-HeapWord* ParallelScavengeHeap::allocate_old_gen_and_record(size_t size) {
-  assert_locked_or_safepoint(Heap_lock);
-  HeapWord* res = old_gen()->allocate(size);
+HeapWord* ParallelScavengeHeap::allocate_old_gen_and_record(size_t size, bool expand) {
+  if (expand) {
+    assert_locked_or_safepoint(Heap_lock);
+  }
+  HeapWord* res = expand ? old_gen()->allocate(size) : old_gen()->cas_allocate_noexpand(size);
   if (res != nullptr) {
     _size_policy->tenured_allocation(size * HeapWordSize);
   }
   return res;
 }
 
-HeapWord* ParallelScavengeHeap::mem_allocate_old_gen(size_t size) {
+HeapWord* ParallelScavengeHeap::mem_allocate_old_gen(size_t size, bool expand) {
   if (!should_alloc_in_eden(size) || GCLocker::is_active_and_needs_gc()) {
-    MonitorLocker ml(Heap_lock);
     // Size is too big for eden, or gc is locked out.
-    return allocate_old_gen_and_record(size);
+    return allocate_old_gen_and_record(size, expand);
   }
 
   return nullptr;
@@ -471,6 +477,13 @@ HeapWord* ParallelScavengeHeap::satisfy_failed_allocation(size_t size, bool is_t
   assert(size != 0, "precondition");
 
   HeapWord* result = nullptr;
+
+  if (!is_tlab) {
+    result = mem_allocate_old_gen(size, true);
+    if (result != nullptr) {
+      return result;
+    }
+  }
 
   GCLocker::check_active_before_gc();
   if (GCLocker::is_active_and_needs_gc()) {

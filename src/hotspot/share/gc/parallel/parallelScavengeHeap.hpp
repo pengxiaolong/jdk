@@ -90,7 +90,7 @@ class ParallelScavengeHeap : public CollectedHeap {
   void trace_heap(GCWhen::Type when, const GCTracer* tracer) override;
 
   // Allocate in oldgen and record the allocation with the size_policy.
-  HeapWord* allocate_old_gen_and_record(size_t word_size);
+  HeapWord* allocate_old_gen_and_record(size_t word_size, bool expand);
 
   void update_parallel_worker_threads_cpu_time();
 
@@ -102,7 +102,7 @@ class ParallelScavengeHeap : public CollectedHeap {
 
   inline bool should_alloc_in_eden(size_t size) const;
 
-  HeapWord* mem_allocate_old_gen(size_t size);
+  HeapWord* mem_allocate_old_gen(size_t size, bool expand = false);
 
   HeapWord* mem_allocate_work(size_t size,
                               bool is_tlab,

@@ -45,25 +45,28 @@
 //
 class AdaptiveWeightedAverage : public CHeapObj<mtGC> {
  private:
-  float            _average;        // The last computed average
-  unsigned         _sample_count;   // How often we've sampled this average
-  unsigned         _weight;         // The weight used to smooth the averages
-                                    //   A higher weight favors the most
-                                    //   recent data.
-  bool             _is_old;         // Has enough historical data
+  volatile float            _average;        // The last computed average
+  volatile unsigned         _sample_count;   // How often we've sampled this average
+  unsigned                  _weight;         // The weight used to smooth the averages
+                                             //   A higher weight favors the most
+                                             //   recent data.
+  bool                      _is_old;         // Has enough historical data
 
   const static unsigned OLD_THRESHOLD = 100;
 
  protected:
-  float            _last_sample;    // The last value sampled.
+  volatile float            _last_sample;    // The last value sampled.
 
   void  increment_count() {
-    _sample_count++;
-    if (!_is_old && _sample_count > OLD_THRESHOLD) {
+    Atomic::inc(&_sample_count);
+    if (!_is_old && Atomic::load(&_sample_count) > OLD_THRESHOLD) {
       _is_old = true;
     }
   }
 
+  bool cas_set_average(float avg, float old) {
+    return  Atomic::cmpxchg(&_average, old, avg) == old;
+  }
   void  set_average(float avg)  { _average = avg;        }
 
   // Helper function, computes an adaptive weighted average
@@ -99,7 +102,7 @@ class AdaptiveWeightedAverage : public CHeapObj<mtGC> {
   bool     is_old()  const       { return _is_old;        }
 
   // Update data with a new sample.
-  void sample(float new_sample);
+  float sample(float new_sample);
 
   static inline float exp_avg(float avg, float sample,
                                unsigned int weight) {
@@ -125,14 +128,14 @@ class AdaptiveWeightedAverage : public CHeapObj<mtGC> {
 // unknown.
 class AdaptivePaddedAverage : public AdaptiveWeightedAverage {
  private:
-  float          _padded_avg;     // The last computed padded average
-  float          _deviation;      // Running deviation from the average
+  volatile float          _padded_avg;     // The last computed padded average
+  volatile float          _deviation;      // Running deviation from the average
   unsigned       _padding;        // A multiple which, added to the average,
                                   // gives us an upper bound guess.
 
  protected:
-  void set_padded_average(float avg)  { _padded_avg = avg;  }
-  void set_deviation(float dev)       { _deviation  = dev;  }
+  void set_padded_average(float avg)  { Atomic::store(&_padded_avg, avg);  }
+  void set_deviation(float dev)       { Atomic::store(&_deviation, dev);  }
 
  public:
   AdaptivePaddedAverage() :

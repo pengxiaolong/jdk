@@ -35,6 +35,7 @@
 
 class PSOldGen : public CHeapObj<mtGC> {
   friend class VMStructs;
+  friend class ParallelScavengeHeap;
  private:
   PSVirtualSpace*          _virtual_space;     // Controls mapping and unmapping of virtual mem
   ObjectStartArray         _start_array;       // Keeps track of where objects start in a 512b block
@@ -52,7 +53,6 @@ class PSOldGen : public CHeapObj<mtGC> {
   static const size_t IterateBlockSize = 1024 * 1024;
 
   HeapWord* cas_allocate_noexpand(size_t word_size) {
-    assert_locked_or_safepoint(Heap_lock);
     HeapWord* res = object_space()->cas_allocate(word_size);
     if (res != nullptr) {
       _start_array.update_for_block(res, res + word_size);
