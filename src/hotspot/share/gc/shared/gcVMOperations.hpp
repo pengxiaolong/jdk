@@ -180,6 +180,7 @@ class VM_GC_HeapInspection: public VM_GC_Operation {
 };
 
 class VM_CollectForAllocation : public VM_GC_Operation {
+ static volatile bool _collect_for_allocation_triggered;
  protected:
   size_t    _word_size; // Size of object to be allocated (in number of words)
   HeapWord* _result;    // Allocation result (null if allocation failed)
@@ -190,6 +191,10 @@ class VM_CollectForAllocation : public VM_GC_Operation {
   HeapWord* result() const {
     return _result;
   }
+
+  static bool try_trigger_collect_for_allocation();
+
+  static void unset_collect_for_allocation_triggered();
 };
 
 class VM_CollectForMetadataAllocation: public VM_GC_Operation {

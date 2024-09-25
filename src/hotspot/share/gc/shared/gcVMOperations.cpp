@@ -194,6 +194,18 @@ void VM_GC_HeapInspection::doit() {
   }
 }
 
+volatile bool VM_CollectForAllocation::_collect_for_allocation_triggered = false;
+
+bool VM_CollectForAllocation::try_trigger_collect_for_allocation() {
+  return Atomic::cmpxchg(&_collect_for_allocation_triggered, false, true) == false;
+}
+
+void VM_CollectForAllocation::unset_collect_for_allocation_triggered() {
+  assert(_collect_for_allocation_triggered, "Must be");
+  Atomic::store(&_collect_for_allocation_triggered, false);
+}
+
+
 VM_CollectForMetadataAllocation::VM_CollectForMetadataAllocation(ClassLoaderData* loader_data,
                                                                  size_t size,
                                                                  Metaspace::MetadataType mdtype,

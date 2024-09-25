@@ -22,6 +22,8 @@
  *
  */
 
+#include <runtime/interfaceSupport.inline.hpp>
+
 #include "precompiled.hpp"
 #include "gc/parallel/objectStartArray.inline.hpp"
 #include "gc/parallel/parallelArguments.hpp"
@@ -291,6 +293,8 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
   uint loop_count = 0;
   uint gc_count = 0;
   uint gclocker_stalled_count = 0;
+  JavaThread* jthr = JavaThread::current();
+
 
   while (result == nullptr) {
     // We don't want to have multiple collections for a single filled generation.
@@ -305,14 +309,6 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     // The policy MUST attempt allocations during the same period it reads the
     // total_collections() value!
     {
-      const jlong t1 = os::javaTimeNanos();
-      MutexLocker ml(Heap_lock);
-      const jlong t2 = os::javaTimeNanos();
-      if (t2 - t1 > 10000000) {
-        log_info(gc)("MutexLocker x(Heap_lock) took over 10ms");
-      }
-      gc_count = total_collections();
-
       result = young_gen()->allocate(size);
       if (result != nullptr) {
         return result;
@@ -343,9 +339,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
         // initiated by the last thread exiting the critical section; so
         // we retry the allocation sequence from the beginning of the loop,
         // rather than causing more, now probably unnecessary, GC attempts.
-        JavaThread* jthr = JavaThread::current();
         if (!jthr->in_critical()) {
-          MutexUnlocker mul(Heap_lock);
           GCLocker::stall_until_clear();
           gclocker_stalled_count += 1;
           continue;
@@ -360,13 +354,28 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     }
 
     if (result == nullptr) {
-      if (total_collections() != gc_count) {
+      if (!VM_CollectForAllocation::try_trigger_collect_for_allocation()) {
+        //Some other mutator thread trigged collection, check safepoint and yield the CPU.
+        ThreadBlockInVM tbivm(jthr);
+        if (SafepointSynchronize::is_synchronizing()) {
+          while (SafepointSynchronize::is_synchronizing() && !SafepointMechanism::local_poll_armed(jthr)) {
+            os::naked_yield();
+          }
+        } else {
+          os::naked_yield();
+        }
         continue;
       }
       // Generate a VM operation
       const jlong t1 = os::javaTimeNanos();
+      {
+        // Get total_collections under Heap_lock
+        MutexLocker ml(Heap_lock);
+        gc_count = total_collections();
+      }
       VM_ParallelCollectForAllocation op(size, is_tlab, gc_count);
       VMThread::execute(&op);
+      VM_CollectForAllocation::unset_collect_for_allocation_triggered();
       const jlong t2 = os::javaTimeNanos();
       if (t2 - t1 > 10000000) {
         log_info(gc)("VMThread::execute(&op) took over 10ms");
@@ -437,6 +446,7 @@ HeapWord* ParallelScavengeHeap::allocate_old_gen_and_record(size_t size) {
 
 HeapWord* ParallelScavengeHeap::mem_allocate_old_gen(size_t size) {
   if (!should_alloc_in_eden(size) || GCLocker::is_active_and_needs_gc()) {
+    MonitorLocker ml(Heap_lock);
     // Size is too big for eden, or gc is locked out.
     return allocate_old_gen_and_record(size);
   }
