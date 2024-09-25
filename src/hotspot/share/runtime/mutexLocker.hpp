@@ -51,7 +51,7 @@ extern Monitor* JvmtiVTMSTransition_lock;        // a lock for Virtual Thread Mo
 extern Monitor* Heap_lock;                       // a lock on the heap
 #ifdef INCLUDE_PARALLELGC
 extern Mutex*   PSOldGenExpand_lock;             // a lock on expanding the heap
-extern Mutex*   PSHeapSyncOp_lock;               // a lock for the operation needs synchronization.
+extern Mutex*   PSSyncOp_lock;                   // a lock for the operation needs synchronization.
 #endif
 extern Mutex*   AdapterHandlerLibrary_lock;      // a lock on the AdapterHandlerLibrary
 extern Mutex*   SignatureHandlerLibrary_lock;    // a lock on the SignatureHandlerLibrary

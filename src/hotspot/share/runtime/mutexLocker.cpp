@@ -346,7 +346,7 @@ void mutex_init() {
 #ifdef INCLUDE_PARALLELGC
   if (UseParallelGC) {
     MUTEX_DEFL(PSOldGenExpand_lock          , PaddedMutex  , Heap_lock, true);
-    MUTEX_DEFL(PSHeapSyncOp_lock            , PaddedMutex  , Heap_lock, true);
+    MUTEX_DEFL(PSSyncOp_lock            , PaddedMutex  , Heap_lock, true);
   }
 #endif
   MUTEX_DEFL(Module_lock                    , PaddedMutex  ,  ClassLoaderDataGraph_lock);
