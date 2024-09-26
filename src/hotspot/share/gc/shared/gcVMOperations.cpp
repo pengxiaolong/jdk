@@ -41,6 +41,7 @@
 #include "runtime/init.hpp"
 #include "runtime/java.hpp"
 #include "runtime/mutexLocker.hpp"
+#include "runtime/semaphore.inline.hpp"
 #include "utilities/dtrace.hpp"
 #include "utilities/macros.hpp"
 #include "utilities/preserveException.hpp"
@@ -195,6 +196,7 @@ void VM_GC_HeapInspection::doit() {
 }
 
 volatile bool VM_CollectForAllocation::_collect_for_allocation_triggered = false;
+volatile int VM_CollectForAllocation::_watiers_on_collect_for_allocation_signal = 0;
 Semaphore* VM_CollectForAllocation::_collect_for_allocation_signal = new Semaphore(0);
 
 bool VM_CollectForAllocation::try_trigger_collect_for_allocation() {
@@ -207,6 +209,7 @@ void VM_CollectForAllocation::wait_on_collect_for_allocation_signal() {
   if (thread->is_active_Java_thread()) {
     Atomic::inc(&_watiers_on_collect_for_allocation_signal);
     _collect_for_allocation_signal->wait_with_safepoint_check(thread);
+    Atomic::dec(&_watiers_on_collect_for_allocation_signal);
   }
 }
 
@@ -214,7 +217,7 @@ void VM_CollectForAllocation::unset_collect_for_allocation_triggered() {
   assert(_collect_for_allocation_triggered, "Must be");
   Atomic::store(&_collect_for_allocation_triggered, false);
   if (Atomic::load(&_watiers_on_collect_for_allocation_signal) > 0) {
-    _collect_for_allocation_signal->signal(Atomic::xchg(&_watiers_on_collect_for_allocation_signal, 0));
+    _collect_for_allocation_signal->signal(Atomic::load(&_watiers_on_collect_for_allocation_signal));
   }
 }
 

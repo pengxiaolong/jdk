@@ -291,7 +291,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
   }
 
   uint loop_count = 0;
-  uint gc_count = 0;
+  uint gc_count = total_collections();
   uint gclocker_stalled_count = 0;
   JavaThread* jthr = JavaThread::current();
 
@@ -309,9 +309,15 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     // The policy MUST attempt allocations during the same period it reads the
     // total_collections() value!
     {
-      result = young_gen()->allocate(size);
-      if (result != nullptr) {
-        return result;
+      if(VM_CollectForAllocation::is_collect_for_allocation_triggered()) {
+        VM_CollectForAllocation::wait_on_collect_for_allocation_signal();
+      }
+      if (total_collections() != gc_count) {
+        //MutexLocker ml(PSSyncOp_lock, Mutex::_no_safepoint_check_flag);
+        result = young_gen()->allocate(size);
+        if (result != nullptr) {
+          return result;
+        }
       }
 
       // If certain conditions hold, try allocating from the old gen.
@@ -356,7 +362,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     if (result == nullptr) {
       //Some other mutator thread trigged collection, check safepoint and yield the CPU.
       if (!VM_CollectForAllocation::try_trigger_collect_for_allocation()) {
-        VM_CollectForAllocation::wait_on_collect_for_allocation_signal();
+        //VM_CollectForAllocation::wait_on_collect_for_allocation_signal();
         continue;
       }
       // Generate a VM operation
