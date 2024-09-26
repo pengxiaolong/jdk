@@ -195,14 +195,27 @@ void VM_GC_HeapInspection::doit() {
 }
 
 volatile bool VM_CollectForAllocation::_collect_for_allocation_triggered = false;
+Semaphore* VM_CollectForAllocation::_collect_for_allocation_signal = new Semaphore(0);
 
 bool VM_CollectForAllocation::try_trigger_collect_for_allocation() {
   return Atomic::cmpxchg(&_collect_for_allocation_triggered, false, true) == false;
 }
 
+void VM_CollectForAllocation::wait_on_collect_for_allocation_signal() {
+  assert(Thread::current()->is_Java_thread(), "must be");
+  JavaThread* thread = JavaThread::current();
+  if (thread->is_active_Java_thread()) {
+    Atomic::inc(&_watiers_on_collect_for_allocation_signal);
+    _collect_for_allocation_signal->wait_with_safepoint_check(thread);
+  }
+}
+
 void VM_CollectForAllocation::unset_collect_for_allocation_triggered() {
   assert(_collect_for_allocation_triggered, "Must be");
   Atomic::store(&_collect_for_allocation_triggered, false);
+  if (Atomic::load(&_watiers_on_collect_for_allocation_signal) > 0) {
+    _collect_for_allocation_signal->signal(Atomic::xchg(&_watiers_on_collect_for_allocation_signal, 0));
+  }
 }
 
 bool VM_CollectForAllocation::is_collect_for_allocation_triggered() {

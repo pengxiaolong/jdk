@@ -317,7 +317,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
       // If certain conditions hold, try allocating from the old gen.
       if (!is_tlab) {
         const jlong t1 = os::javaTimeNanos();
-        result = mem_allocate_old_gen(size);
+        result = mem_allocate_old_gen(size, true);
         const jlong t2 = os::javaTimeNanos();
         if (t2 - t1 > 10000000) {
           log_info(gc)("mem_allocate_old_gen(size) took over 10ms");
@@ -356,19 +356,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     if (result == nullptr) {
       //Some other mutator thread trigged collection, check safepoint and yield the CPU.
       if (!VM_CollectForAllocation::try_trigger_collect_for_allocation()) {
-        ThreadBlockInVM tbivm(jthr);
-        while (VM_CollectForAllocation::is_collect_for_allocation_triggered() &&
-               !SafepointSynchronize::is_synchronizing()) {
-          os::naked_yield();
-        }
-        if (VM_CollectForAllocation::is_collect_for_allocation_triggered() &&
-            SafepointSynchronize::is_synchronizing()) {
-          while (VM_CollectForAllocation::is_collect_for_allocation_triggered() &&
-                 SafepointSynchronize::is_synchronizing() &&
-                 !SafepointMechanism::local_poll_armed(jthr)) {
-            os::naked_yield();
-          }
-        }
+        VM_CollectForAllocation::wait_on_collect_for_allocation_signal();
         continue;
       }
       // Generate a VM operation
@@ -454,7 +442,7 @@ HeapWord* ParallelScavengeHeap::allocate_old_gen_and_record(size_t size, bool ex
 HeapWord* ParallelScavengeHeap::mem_allocate_old_gen(size_t size, bool expand) {
   if (!should_alloc_in_eden(size) || GCLocker::is_active_and_needs_gc()) {
     // Size is too big for eden, or gc is locked out.
-    MutexLocker ml(PSSyncOp_lock);
+    MutexLocker ml(PSSyncOp_lock, Mutex::_no_safepoint_check_flag);
     return allocate_old_gen_and_record(size, expand);
   }
 
@@ -482,13 +470,6 @@ HeapWord* ParallelScavengeHeap::satisfy_failed_allocation(size_t size, bool is_t
   assert(size != 0, "precondition");
 
   HeapWord* result = nullptr;
-
-  if (!is_tlab) {
-    result = mem_allocate_old_gen(size, true);
-    if (result != nullptr) {
-      return result;
-    }
-  }
 
   GCLocker::check_active_before_gc();
   if (GCLocker::is_active_and_needs_gc()) {

@@ -181,6 +181,8 @@ class VM_GC_HeapInspection: public VM_GC_Operation {
 
 class VM_CollectForAllocation : public VM_GC_Operation {
  static volatile bool _collect_for_allocation_triggered;
+ static volatile uint _watiers_on_collect_for_allocation_signal;
+ static Semaphore*   _collect_for_allocation_signal;
  protected:
   size_t    _word_size; // Size of object to be allocated (in number of words)
   HeapWord* _result;    // Allocation result (null if allocation failed)
@@ -193,6 +195,8 @@ class VM_CollectForAllocation : public VM_GC_Operation {
   }
 
   static bool try_trigger_collect_for_allocation();
+
+  static void wait_on_collect_for_allocation_signal();
 
   static void unset_collect_for_allocation_triggered();
 
