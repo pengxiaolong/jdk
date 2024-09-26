@@ -183,7 +183,9 @@ class VM_CollectForAllocation : public VM_GC_Operation {
  static volatile bool _collect_for_allocation_triggered;
  static volatile int _watiers_on_collect_for_allocation_signal;
  static Semaphore*   _collect_for_allocation_signal;
- protected:
+ static WaitBarrierDefault* _collect_for_allocation_barrier;
+ 
+protected:
   size_t    _word_size; // Size of object to be allocated (in number of words)
   HeapWord* _result;    // Allocation result (null if allocation failed)
 

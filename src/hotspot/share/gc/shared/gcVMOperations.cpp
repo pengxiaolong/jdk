@@ -198,27 +198,26 @@ void VM_GC_HeapInspection::doit() {
 volatile bool VM_CollectForAllocation::_collect_for_allocation_triggered = false;
 volatile int VM_CollectForAllocation::_watiers_on_collect_for_allocation_signal = 0;
 Semaphore* VM_CollectForAllocation::_collect_for_allocation_signal = new Semaphore(0);
+WaitBarrierDefault* VM_CollectForAllocation::_collect_for_allocation_barrier = new WaitBarrierDefault();
 
 bool VM_CollectForAllocation::try_trigger_collect_for_allocation() {
-  return Atomic::cmpxchg(&_collect_for_allocation_triggered, false, true) == false;
+  bool success = Atomic::cmpxchg(&_collect_for_allocation_triggered, false, true) == false;
+  if (success) {
+    _collect_for_allocation_barrier->arm(1);
+  }
+  return success;
 }
 
 void VM_CollectForAllocation::wait_on_collect_for_allocation_signal() {
   assert(Thread::current()->is_Java_thread(), "must be");
-  JavaThread* thread = JavaThread::current();
-  if (thread->is_active_Java_thread()) {
-    Atomic::inc(&_watiers_on_collect_for_allocation_signal);
-    _collect_for_allocation_signal->wait_with_safepoint_check(thread);
-    Atomic::dec(&_watiers_on_collect_for_allocation_signal);
-  }
+  ThreadBlockInVM tbivm(JavaThread::current());
+  _collect_for_allocation_barrier->wait(1);
 }
 
 void VM_CollectForAllocation::unset_collect_for_allocation_triggered() {
   assert(_collect_for_allocation_triggered, "Must be");
   Atomic::store(&_collect_for_allocation_triggered, false);
-  if (Atomic::load(&_watiers_on_collect_for_allocation_signal) > 0) {
-    _collect_for_allocation_signal->signal(Atomic::load(&_watiers_on_collect_for_allocation_signal));
-  }
+  _collect_for_allocation_barrier->disarm();
 }
 
 bool VM_CollectForAllocation::is_collect_for_allocation_triggered() {
