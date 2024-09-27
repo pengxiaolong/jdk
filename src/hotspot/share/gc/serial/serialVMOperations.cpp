@@ -35,6 +35,7 @@ void VM_SerialCollectForAllocation::doit() {
   if (_result == nullptr && GCLocker::is_active_and_needs_gc()) {
     set_gc_locked();
   }
+  unset_collect_for_allocation_started();
 }
 
 void VM_SerialGCCollect::doit() {

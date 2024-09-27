@@ -312,6 +312,9 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
   // Loop until the allocation is satisfied, or unsatisfied after GC.
   for (uint try_count = 1, gclocker_stalled_count = 0; /* return or throw */; try_count += 1) {
 
+    if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
+      VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
+    }
     // First allocation attempt is lock-free.
     DefNewGeneration *young = _young_gen;
     if (young->should_allocate(size, is_tlab)) {
@@ -321,9 +324,8 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
         return result;
       }
     }
-    uint gc_count_before;  // Read inside the Heap_lock locked region.
+    uint gc_count_before = total_collections();
     {
-      MutexLocker ml(Heap_lock);
       log_trace(gc, alloc)("SerialHeap::mem_allocate_work: attempting locked slow path allocation");
       // Note that only large objects get a shot at being
       // allocated in later generations.
@@ -340,6 +342,7 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
           return nullptr;  // Caller will retry allocating individual object.
         }
         if (!is_maximal_no_gc()) {
+          MutexLocker ml(Heap_lock);
           // Try and expand heap to satisfy request.
           result = expand_heap_and_allocate(size, is_tlab);
           // Result could be null if we are out of space.
@@ -360,7 +363,6 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
         // rather than causing more, now probably unnecessary, GC attempts.
         JavaThread* jthr = JavaThread::current();
         if (!jthr->in_critical()) {
-          MutexUnlocker mul(Heap_lock);
           // Wait for JNI critical section to be exited
           GCLocker::stall_until_clear();
           gclocker_stalled_count += 1;
@@ -373,11 +375,12 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
           return nullptr;
         }
       }
-
-      // Read the gc count while the heap lock is held.
-      gc_count_before = total_collections();
     }
 
+    if (!VM_CollectForAllocation::try_set_collect_for_allocation_started()) {
+      VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
+      continue;
+    }
     VM_SerialCollectForAllocation op(size, is_tlab, gc_count_before);
     VMThread::execute(&op);
     if (op.prologue_succeeded()) {
@@ -390,6 +393,8 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
       assert(result == nullptr || is_in_reserved(result),
              "result not in heap");
       return result;
+    } else {
+      VM_CollectForAllocation::unset_collect_for_allocation_started();
     }
 
     // Give a warning if we seem to be looping forever.
@@ -414,6 +419,7 @@ HeapWord* SerialHeap::attempt_allocation(size_t size,
   }
 
   if (_old_gen->should_allocate(size, is_tlab)) {
+    MutexLocker ml(Heap_lock);
     res = _old_gen->allocate(size);
   }
 
