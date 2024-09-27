@@ -317,11 +317,16 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
     }
     // First allocation attempt is lock-free.
     DefNewGeneration *young = _young_gen;
+    bool retry_young = false;
     if (young->should_allocate(size, is_tlab)) {
       result = young->par_allocate(size);
       if (result != nullptr) {
         assert(is_in_reserved(result), "result not in heap");
         return result;
+      }
+      if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
+        VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
+        retry_young = true;
       }
     }
     uint gc_count_before = total_collections();
@@ -329,20 +334,27 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
       log_trace(gc, alloc)("SerialHeap::mem_allocate_work: attempting locked slow path allocation");
       // Note that only large objects get a shot at being
       // allocated in later generations.
-      bool first_only = !should_try_older_generation_allocation(size);
-
-      result = attempt_allocation(size, is_tlab, first_only);
-      if (result != nullptr) {
-        assert(is_in_reserved(result), "result not in heap");
-        return result;
+      if (retry_young) {
+        result = young->par_allocate(size);
+        if (result != nullptr) {
+          assert(is_in_reserved(result), "result not in heap");
+          return result;
+        }
       }
 
-      if (GCLocker::is_active_and_needs_gc()) {
+      if (should_try_older_generation_allocation(wordSize) || GCLocker::is_active_and_needs_gc()) {
         if (is_tlab) {
           return nullptr;  // Caller will retry allocating individual object.
         }
+        MutexLocker ml(Heap_lock);
+        result = _old_gen->allocate(size);
+
+        if (result != nullptr) {
+          assert(is_in_reserved(result), "result not in heap");
+          return result;
+        }
+
         if (!is_maximal_no_gc()) {
-          MutexLocker ml(Heap_lock);
           // Try and expand heap to satisfy request.
           result = expand_heap_and_allocate(size, is_tlab);
           // Result could be null if we are out of space.
