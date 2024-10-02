@@ -949,11 +949,15 @@ void ShenandoahFreeSet::recycle_trash() {
         try_recycle_trashed(_trash_regions[idx++]);
       }
       batch_end_time = os::javaTimeNanos();
-      if (batch_end_time < deadline) {
+      if (idx < count && batch_end_time < deadline) {
         jlong duration_ns = batch_end_time - batch_start_time;
         batch_size = MIN2((deadline - batch_end_time) / duration_ns * batch_size, MAX_BATCH);
+	if (batch_size > 0) {
+          continue;
+	}
       }
-    } while ((idx < count) && (batch_end_time < deadline) && batch_size > 0);
+      break;
+    } while (true);
   }
 }
 
