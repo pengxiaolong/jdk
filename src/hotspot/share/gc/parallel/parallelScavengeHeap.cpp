@@ -59,6 +59,7 @@ PSYoungGen*  ParallelScavengeHeap::_young_gen = nullptr;
 PSOldGen*    ParallelScavengeHeap::_old_gen = nullptr;
 PSAdaptiveSizePolicy* ParallelScavengeHeap::_size_policy = nullptr;
 PSGCAdaptivePolicyCounters* ParallelScavengeHeap::_gc_policy_counters = nullptr;
+volatile uint ParallelScavengeHeap::_slow_mem_alloc_contendors = 0;
 
 jint ParallelScavengeHeap::initialize() {
   const size_t reserved_heap_size = ParallelArguments::heap_reserved_size_bytes();
@@ -288,6 +289,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
   uint gc_count = total_collections();
   uint gclocker_stalled_count = 0;
 
+  Atomic::inc(&_slow_mem_alloc_contendors, memory_order_relaxed);
   while (result == nullptr) {
     // We don't want to have multiple collections for a single filled generation.
     // To prevent this, each thread has to try to exchange VM_CollectForAllocation::_collect_for_allocation_started
@@ -298,11 +300,17 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
       VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
     }
-
     if (gc_count != total_collections()) {
-      result = young_gen()->allocate(size);
-      gc_count = total_collections();
+      if (_slow_mem_alloc_contendors >= os::processor_count()) {
+        MutexLocker ml(Heap_lock);
+        result = young_gen()->allocate(size);
+        gc_count = total_collections();
+      } else {
+        result = young_gen()->allocate(size);
+        gc_count = total_collections();
+      }
       if (result != nullptr) {
+        Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
         return result;
       }
     }
@@ -316,11 +324,13 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
         result = mem_allocate_old_gen(size);
       }
       if (result != nullptr) {
+        Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
         return result;
       }
     }
 
     if (gclocker_stalled_count > GCLockerRetryAllocationCount) {
+      Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
       return nullptr;
     }
 
@@ -342,6 +352,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
           fatal("Possible deadlock due to allocating while"
                 " in jni critical section");
         }
+        Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
         return nullptr;
       }
     }
@@ -390,9 +401,10 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
           if (op.result() != nullptr) {
             CollectedHeap::fill_with_object(op.result(), size);
           }
+          Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
           return nullptr;
         }
-
+        Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
         return op.result();
       }
       // if the VM operation did not execute, need to make sure unset_collect_for_allocation_started is invoked.
@@ -409,6 +421,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_work(size_t size,
     }
   }
 
+  Atomic::dec(&_slow_mem_alloc_contendors, memory_order_relaxed);
   return result;
 }
 

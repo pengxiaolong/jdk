@@ -75,6 +75,8 @@ class ParallelScavengeHeap : public CollectedHeap {
   static PSAdaptiveSizePolicy*       _size_policy;
   static PSGCAdaptivePolicyCounters* _gc_policy_counters;
 
+  static volatile uint _slow_mem_alloc_contendors;
+
   GCMemoryManager* _young_manager;
   GCMemoryManager* _old_manager;
 
