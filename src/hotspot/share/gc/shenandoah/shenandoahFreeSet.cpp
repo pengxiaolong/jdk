@@ -919,10 +919,6 @@ void ShenandoahFreeSet::recycle_trash() {
     }
   }
 
-  jlong start_time = os::javaTimeNanos();
-  // Relinquish the lock after this much time passed.
-  jlong batch_start_time = 0;
-  jlong batch_end_time = start_time;    // This value will be treated as the initial batch_start_time
   // Process batches of regions until it has been 8 us since the last yield.
   static constexpr jlong deadline_ns = 8000;     // 8 us
   size_t idx = 0;
@@ -931,10 +927,12 @@ void ShenandoahFreeSet::recycle_trash() {
     if (idx > 0) {
       os::naked_yield(); // Yield to allow allocators to take the lock, except on the first iteration
     }
-    batch_start_time = batch_end_time;
-    const jlong deadline = batch_start_time + deadline_ns;
+    jlong batch_start_time = 0;
+    jlong batch_end_time = 0;
     size_t batch_size = MAX_BATCH; //initial batch
     ShenandoahHeapLocker locker(_heap->lock());
+    jlong start_time = os::javaTimeNanos();
+    const jlong deadline = batch_start_time + deadline_ns;
     // Avoid another call to javaTimeNanos() if we already know time at which last batch ended
     do {
       // Measurements suggest it typically takes less than 200 ns on average to recycle_trash() for a single region.
@@ -945,6 +943,7 @@ void ShenandoahFreeSet::recycle_trash() {
       // yields.  Yielding more frequently when there is heavy contention for the heap lock or for CPU cores is considered the
       // right thing to do.
       const size_t max_idx = MIN2(count, idx + batch_size);//initial batch
+      batch_start_time = os::javaTimeNanos();
       while (idx < max_idx) {
         try_recycle_trashed(_trash_regions[idx++]);
       }
