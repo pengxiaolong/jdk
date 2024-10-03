@@ -929,16 +929,16 @@ void ShenandoahFreeSet::recycle_trash() {
     }
 
     size_t batch_size = MAX_BATCH_SIZE; //set initial batch size to MAX_BATCH_SIZE
+    //Cacluate deadline bebore taking lock to include lock time in 8 us budget,
+    //When the lock is heavily contended, it will likely only process one batch.
+    const jlong deadline = os::javaTimeNanos() + deadline_ns;
 
     ShenandoahHeapLocker locker(_heap->lock());
-
     jlong batch_start_time = 0;
-    jlong batch_end_time = os::javaTimeNanos();;
-    // cacluate deadline after taking lock to exclude the time for taking lock from 8 us.
-    const jlong deadline = batch_end_time + deadline_ns;
-    // Avoid another call to javaTimeNanos() if we already know time at which last batch ended
+    jlong batch_end_time = os::javaTimeNanos();
     do {
-      batch_start_time = batch_end_time; //set batch_start_time to last batch_end_time
+      // Avoid another call to javaTimeNanos() if we already know time at which last batch ended
+      batch_start_time = batch_end_time;
       const size_t max_idx = MIN2(count, idx + batch_size); //initial batch
       while (idx < max_idx) {
         try_recycle_trashed(_trash_regions[idx++]);
