@@ -922,38 +922,34 @@ void ShenandoahFreeSet::recycle_trash() {
   // Process batches of regions until it has been 8 us since the last yield.
   static constexpr jlong deadline_ns = 8000;     // 8 us
   size_t idx = 0;
-  const size_t MAX_BATCH = 32;
+  const size_t MAX_BATCH_SIZE = 32;
   while (idx < count) {
     if (idx > 0) {
       os::naked_yield(); // Yield to allow allocators to take the lock, except on the first iteration
     }
-    jlong batch_start_time = 0;
-    jlong batch_end_time = 0;
-    size_t batch_size = MAX_BATCH; //initial batch
+
+    size_t batch_size = MAX_BATCH_SIZE; //set initial batch size to MAX_BATCH_SIZE
+
     ShenandoahHeapLocker locker(_heap->lock());
-    jlong start_time = os::javaTimeNanos();
-    const jlong deadline = batch_start_time + deadline_ns;
+
+    jlong batch_start_time = 0;
+    jlong batch_end_time = os::javaTimeNanos();;
+    // cacluate deadline after taking lock to exclude the time for taking lock from 8 us.
+    const jlong deadline = batch_end_time + deadline_ns;
     // Avoid another call to javaTimeNanos() if we already know time at which last batch ended
     do {
-      // Measurements suggest it typically takes less than 200 ns on average to recycle_trash() for a single region.
-      // With an 8 us deadline and a 32-region batch, we find that we typically process 3 batches between yields.
-      //
-      // Note that deadline is enforced since the end of previous batch.  In the case that yield() or acquisition of heap lock
-      // takes a "long time", we will have less time to process regions, but we will always process at least one batch between
-      // yields.  Yielding more frequently when there is heavy contention for the heap lock or for CPU cores is considered the
-      // right thing to do.
-      const size_t max_idx = MIN2(count, idx + batch_size);//initial batch
-      batch_start_time = os::javaTimeNanos();
+      batch_start_time = batch_end_time; //set batch_start_time to last batch_end_time
+      const size_t max_idx = MIN2(count, idx + batch_size); //initial batch
       while (idx < max_idx) {
         try_recycle_trashed(_trash_regions[idx++]);
       }
       batch_end_time = os::javaTimeNanos();
       if (idx < count && batch_end_time < deadline) {
         jlong duration_ns = batch_end_time - batch_start_time;
-        batch_size = MIN2((deadline - batch_end_time) / duration_ns * batch_size, MAX_BATCH);
-	if (batch_size > 0) {
+        batch_size = MIN2((deadline - batch_end_time) / duration_ns * batch_size, MAX_BATCH_SIZE);
+        if (batch_size > 0) {
           continue;
-	}
+        }
       }
       break;
     } while (true);
