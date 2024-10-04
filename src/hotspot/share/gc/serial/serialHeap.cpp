@@ -340,7 +340,7 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
       }
       // Note that only large objects get a shot at being
       // allocated in later generations.
-      if (_old_gen->should_allocate(size, is_tlab) && _old_gen->should_allocate(size, is_tlab)) {
+      if (should_try_older_generation_allocation(wordSize) && _old_gen->should_allocate(size, is_tlab)) {
         result = _old_gen->allocate(size);
         assert(is_in_reserved(result), "result not in heap");
         return result;

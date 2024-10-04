@@ -122,7 +122,7 @@ inline HeapWord* ContiguousSpace::allocate_impl(size_t size) {
 
 // This version is lock-free.
 inline HeapWord* ContiguousSpace::par_allocate_impl(size_t size, const uint max_attempts) {
-  int attempts = 0;
+  uint attempts = 0;
   do {
     HeapWord* obj = top();
     if (pointer_delta(end(), obj) >= size) {
@@ -139,6 +139,7 @@ inline HeapWord* ContiguousSpace::par_allocate_impl(size_t size, const uint max_
       return nullptr;
     }
   } while (max_attempts == 0 || ++attempts < max_attempts);
+  return nullptr;
 }
 
 // Requires locking.
