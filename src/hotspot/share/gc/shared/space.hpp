@@ -120,7 +120,7 @@ public:
   HeapWord* par_allocate(size_t word_size, uint &max_attempts);
   HeapWord* par_allocate(size_t word_size) {
     uint attempts = 0;
-    par_allocate(word_size, attempts);
+    return par_allocate(word_size, attempts);
   }
 
 
