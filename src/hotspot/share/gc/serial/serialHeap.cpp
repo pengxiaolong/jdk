@@ -331,7 +331,7 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
       MutexLocker ml(Heap_lock);
       log_trace(gc, alloc)("SerialHeap::mem_allocate_work: attempting locked slow path allocation");
 
-      if (_young_gen->should_allocate(size, is_tlab)) {
+      if (should_allocate_in_young) {
         result = _young_gen->allocate(size);
         if (result != nullptr) {
           assert(is_in_reserved(result), "result not in heap");
@@ -342,8 +342,10 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
       // allocated in later generations.
       if (should_try_older_generation_allocation(wordSize) && _old_gen->should_allocate(size, is_tlab)) {
         result = _old_gen->allocate(size);
-        assert(is_in_reserved(result), "result not in heap");
-        return result;
+        if (result != nullptr) {
+          assert(is_in_reserved(result), "result not in heap");
+          return result;
+        }
       }
 
       if (GCLocker::is_active_and_needs_gc()) {
