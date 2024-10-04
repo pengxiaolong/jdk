@@ -873,8 +873,8 @@ HeapWord* DefNewGeneration::allocate(size_t word_size) {
   return result;
 }
 
-HeapWord* DefNewGeneration::par_allocate(size_t word_size) {
-  return eden()->par_allocate(word_size);
+HeapWord* DefNewGeneration::par_allocate(size_t word_size, const uint max_attempts) {
+  return eden()->par_allocate(word_size, max_attempts);
 }
 
 size_t DefNewGeneration::tlab_capacity() const {

@@ -211,7 +211,7 @@ class DefNewGeneration: public Generation {
 
   // Allocate requested size or return null; single-threaded and lock-free versions.
   HeapWord* allocate(size_t word_size);
-  HeapWord* par_allocate(size_t word_size);
+  HeapWord* par_allocate(size_t word_size, const uint max_attempts = 0);
 
   void gc_epilogue(bool full);
 

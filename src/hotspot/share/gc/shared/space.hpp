@@ -57,7 +57,7 @@ private:
 
   // Allocation helpers (return null if full).
   inline HeapWord* allocate_impl(size_t word_size);
-  inline HeapWord* par_allocate_impl(size_t word_size);
+  inline HeapWord* par_allocate_impl(size_t word_size, const uint max_attempts = 0);
 
 public:
   ContiguousSpace();
@@ -116,7 +116,7 @@ public:
   // mutually exclusive access to the space.
   HeapWord* allocate(size_t word_size);
   // Allocation (return null if full).  Enforces mutual exclusion internally.
-  HeapWord* par_allocate(size_t word_size);
+  HeapWord* par_allocate(size_t word_size, const uint max_attempts = 0);
 
   // Iteration
   void object_iterate(ObjectClosure* blk);
