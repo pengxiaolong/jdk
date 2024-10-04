@@ -314,16 +314,17 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
   // Loop until the allocation is satisfied, or unsatisfied after GC.
   for (uint try_count = 1, gclocker_stalled_count = 0; /* return or throw */; try_count += 1) {
 
-    if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
-      VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
-    }
-
+    uint attempts = os::processor_count();
     if (should_allocate_in_young) {
-      result = young->par_allocate(size, os::processor_count());
+      result = young->par_allocate(size, attempts);
       if (result != nullptr) {
         assert(is_in_reserved(result), "result not in heap");
         return result;
       }
+    }
+
+    if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
+      VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
     }
 
     uint gc_count_before;  // Read inside the Heap_lock locked region.
@@ -331,7 +332,7 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
       MutexLocker ml(Heap_lock);
       log_trace(gc, alloc)("SerialHeap::mem_allocate_work: attempting locked slow path allocation");
 
-      if (should_allocate_in_young) {
+      if (should_allocate_in_young && attempts == 0 && _young_gen->capacity_before_gc() >= wordSize) {
         result = _young_gen->allocate(size);
         if (result != nullptr) {
           assert(is_in_reserved(result), "result not in heap");
