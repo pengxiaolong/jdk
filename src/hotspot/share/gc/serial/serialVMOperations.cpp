@@ -27,6 +27,9 @@
 #include "gc/shared/gcLocker.hpp"
 
 void VM_SerialCollectForAllocation::doit() {
+  // At safepoint, we can safely roll JavaThreds to safepoint wait barrier.
+  unset_collect_for_allocation_started();
+
   SerialHeap* gch = SerialHeap::heap();
   GCCauseSetter gccs(gch, _gc_cause);
   _result = gch->satisfy_failed_allocation(_word_size, _tlab);
@@ -35,7 +38,6 @@ void VM_SerialCollectForAllocation::doit() {
   if (_result == nullptr && GCLocker::is_active_and_needs_gc()) {
     set_gc_locked();
   }
-  unset_collect_for_allocation_started();
 }
 
 void VM_SerialGCCollect::doit() {
