@@ -57,7 +57,9 @@ private:
 
   // Allocation helpers (return null if full).
   inline HeapWord* allocate_impl(size_t word_size);
-  inline HeapWord* par_allocate_impl(size_t word_size);
+
+  template<bool YIELD_SAFEPOINT = false>
+  HeapWord* par_allocate_impl(size_t word_size);
 
 public:
   ContiguousSpace();

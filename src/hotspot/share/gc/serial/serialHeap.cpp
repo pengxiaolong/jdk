@@ -317,21 +317,16 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
 
     if (should_allocate_in_young) {
       result = young->par_allocate(size);
-      gc_count_before = total_collections();
       if (result != nullptr) {
         assert(is_in_reserved(result), "result not in heap");
         return result;
       }
+      gc_count_before = total_collections();
     }
 
+    log_trace(gc, alloc)("SerialHeap::mem_allocate_work: attempting locked slow path allocation");
     if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
       VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
-      continue;
-    }
-
-    {
-      log_trace(gc, alloc)("SerialHeap::mem_allocate_work: attempting locked slow path allocation");
-      MutexLocker ml(Heap_lock);
       if (should_allocate_in_young && gc_count_before != total_collections()) {
         result = young->allocate(size);
         if (result != nullptr) {
@@ -339,63 +334,55 @@ HeapWord* SerialHeap::mem_allocate_work(size_t size,
           return result;
         }
       }
-
       gc_count_before = total_collections();
+    }
 
-      // Note that only large objects get a shot at being
-      // allocated in later generations.
-      if (should_try_older_generation_allocation(wordSize)) {
-        if (is_tlab) {
-          return nullptr;  // Caller will retry allocating individual object.
-        }
+    if (_old_gen->should_allocate(size, is_tlab)) {
+      MutexLocker ml(Heap_lock);
+      result = _old_gen->allocate(size);
+      if (result != nullptr) {
+        assert(is_in_reserved(result), "result not in heap");
+        return result;
+      }
+    }
 
-        if (_old_gen->should_allocate(size, is_tlab)) {
-          result = _old_gen->allocate(size);
-          if (result != nullptr) {
-            assert(is_in_reserved(result), "result not in heap");
-            return result;
-          }
+    if (GCLocker::is_active_and_needs_gc()) {
+      if (is_tlab) {
+        return nullptr;  // Caller will retry allocating individual object.
+      }
+
+      if (!is_maximal_no_gc()) {
+        MutexLocker ml(Heap_lock);
+        // Try and expand heap to satisfy request.
+        result = expand_heap_and_allocate(size, is_tlab);
+        // Result could be null if we are out of space.
+        if (result != nullptr) {
+          return result;
         }
       }
 
-      if (GCLocker::is_active_and_needs_gc()) {
-        if (is_tlab) {
-          return nullptr;  // Caller will retry allocating individual object.
-        }
+      if (gclocker_stalled_count > GCLockerRetryAllocationCount) {
+        return nullptr; // We didn't get to do a GC and we didn't get any memory.
+      }
 
-        if (!is_maximal_no_gc()) {
-          // Try and expand heap to satisfy request.
-          result = expand_heap_and_allocate(size, is_tlab);
-          // Result could be null if we are out of space.
-          if (result != nullptr) {
-            return result;
-          }
+      // If this thread is not in a jni critical section, we stall
+      // the requestor until the critical section has cleared and
+      // GC allowed. When the critical section clears, a GC is
+      // initiated by the last thread exiting the critical section; so
+      // we retry the allocation sequence from the beginning of the loop,
+      // rather than causing more, now probably unnecessary, GC attempts.
+      JavaThread* jthr = JavaThread::current();
+      if (!jthr->in_critical()) {
+        // Wait for JNI critical section to be exited
+        GCLocker::stall_until_clear();
+        gclocker_stalled_count += 1;
+        continue;
+      } else {
+        if (CheckJNICalls) {
+          fatal("Possible deadlock due to allocating while"
+                " in jni critical section");
         }
-
-        if (gclocker_stalled_count > GCLockerRetryAllocationCount) {
-          return nullptr; // We didn't get to do a GC and we didn't get any memory.
-        }
-
-        // If this thread is not in a jni critical section, we stall
-        // the requestor until the critical section has cleared and
-        // GC allowed. When the critical section clears, a GC is
-        // initiated by the last thread exiting the critical section; so
-        // we retry the allocation sequence from the beginning of the loop,
-        // rather than causing more, now probably unnecessary, GC attempts.
-        JavaThread* jthr = JavaThread::current();
-        if (!jthr->in_critical()) {
-          // Wait for JNI critical section to be exited
-          MutexUnlocker mul(Heap_lock);
-          GCLocker::stall_until_clear();
-          gclocker_stalled_count += 1;
-          continue;
-        } else {
-          if (CheckJNICalls) {
-            fatal("Possible deadlock due to allocating while"
-                  " in jni critical section");
-          }
-          return nullptr;
-        }
+        return nullptr;
       }
     }
 

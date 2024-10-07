@@ -869,7 +869,7 @@ HeapWord* DefNewGeneration::allocate(size_t word_size) {
   // We try to allocate from the eden.  If that works, we are happy.
   // Note that since DefNewGeneration supports lock-free allocation, we
   // have to use it here, as well.
-  HeapWord* result = eden()->allocate(word_size);
+  HeapWord* result = eden()->par_allocate(word_size);
   return result;
 }
 

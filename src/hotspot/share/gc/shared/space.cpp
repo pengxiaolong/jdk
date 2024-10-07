@@ -124,8 +124,8 @@ inline HeapWord* ContiguousSpace::allocate_impl(size_t size) {
 }
 
 // This version is lock-free.
-inline HeapWord* ContiguousSpace::par_allocate_impl(size_t size) {
-  assert(Thread::current()->is_Java_thread(), "Must be mutator.");
+template<bool YIELD_SAFEPOINT = false>
+HeapWord* ContiguousSpace::par_allocate_impl(size_t size) {
   do {
     HeapWord* obj = top();
     if (pointer_delta(end(), obj) >= size) {
@@ -141,7 +141,9 @@ inline HeapWord* ContiguousSpace::par_allocate_impl(size_t size) {
     } else {
       return nullptr;
     }
-    if (SafepointSynchronize::is_synchronizing()) {
+
+    if (YIELD_SAFEPOINT && SafepointSynchronize::is_synchronizing()) {
+      assert(Thread::current()->is_Java_thread(), "Must be mutator.");
       ThreadBlockInVM tbivm(JavaThread::current());
     }
   } while (true);
@@ -154,5 +156,5 @@ HeapWord* ContiguousSpace::allocate(size_t size) {
 
 // Lock-free.
 HeapWord* ContiguousSpace::par_allocate(size_t size) {
-  return par_allocate_impl(size);
+  return par_allocate_impl<true>(size);
 }
