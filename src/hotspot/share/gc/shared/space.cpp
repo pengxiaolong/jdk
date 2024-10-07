@@ -27,6 +27,9 @@
 #include "classfile/vmSymbols.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
 #include "gc/shared/space.hpp"
+
+#include <runtime/interfaceSupport.inline.hpp>
+
 #include "gc/shared/spaceDecorator.hpp"
 #include "memory/iterator.inline.hpp"
 #include "memory/universe.hpp"
@@ -122,6 +125,7 @@ inline HeapWord* ContiguousSpace::allocate_impl(size_t size) {
 
 // This version is lock-free.
 inline HeapWord* ContiguousSpace::par_allocate_impl(size_t size) {
+  assert(Thread::current()->is_Java_thread(), "Must be mutator.");
   do {
     HeapWord* obj = top();
     if (pointer_delta(end(), obj) >= size) {
@@ -136,6 +140,9 @@ inline HeapWord* ContiguousSpace::par_allocate_impl(size_t size) {
       }
     } else {
       return nullptr;
+    }
+    if (SafepointSynchronize::is_synchronizing()) {
+      ThreadBlockInVM tbivm(JavaThread::current());
     }
   } while (true);
 }
