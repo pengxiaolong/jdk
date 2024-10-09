@@ -25,6 +25,8 @@
 #ifndef SHARE_GC_G1_G1ALLOCREGION_INLINE_HPP
 #define SHARE_GC_G1_G1ALLOCREGION_INLINE_HPP
 
+#include <runtime/interfaceSupport.inline.hpp>
+
 #include "gc/g1/g1AllocRegion.hpp"
 
 #include "gc/g1/g1HeapRegion.inline.hpp"
@@ -105,6 +107,47 @@ inline HeapWord* MutatorAllocRegion::attempt_retained_allocation(size_t min_word
     }
   }
   return nullptr;
+}
+
+inline bool MutatorAllocRegion::try_set_alloc_region_update_state() {
+  assert(_alloc_region_update_state == NONE || _alloc_region_update_state == FAILED, "Must be.");
+
+  if (Atomic::cmpxchg(&_alloc_region_update_state, NONE, UPDATEING) == NONE) {
+    return true;
+  }
+
+  if(Atomic::cmpxchg(&_alloc_region_update_state, FAILED, UPDATEING) == FAILED) {
+    return true;
+  }
+
+  return false;
+}
+
+inline void MutatorAllocRegion::set_alloc_region_update_state(AllocRegionUpdateState state) {
+  Atomic::store(&_alloc_region_update_state, state);
+}
+
+inline void MutatorAllocRegion::arm_alloc_region_update_barrier() const {
+  assert(_alloc_region_update_state == UPDATEING, "Must be.");
+  _alloc_region_update_barrier->arm(_node_index);
+}
+
+inline void MutatorAllocRegion::disarm_alloc_region_update_barrier() const {
+  assert(_alloc_region_update_state != UPDATEING, "Must not.");
+  _alloc_region_update_barrier->disarm();
+}
+
+inline AllocRegionUpdateState MutatorAllocRegion::get_alloc_region_update_state() const {
+  return Atomic::load(&_alloc_region_update_state);
+}
+
+inline void MutatorAllocRegion::wait_for_alloc_region_update() const{
+  if (Thread::current()->is_Java_thread()) {
+    ThreadBlockInVM tbivm(JavaThread::current());
+    _alloc_region_update_barrier->wait(_node_index);
+  } else {
+    _alloc_region_update_barrier->wait(_node_index);
+  }
 }
 
 #endif // SHARE_GC_G1_G1ALLOCREGION_INLINE_HPP

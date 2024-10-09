@@ -421,11 +421,9 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(size_t word_size) {
     uint gc_count_before;
 
     {
-      MutexLocker x(Heap_lock);
-
       // Now that we have the lock, we first retry the allocation in case another
       // thread changed the region while we were waiting to acquire the lock.
-      result = _allocator->attempt_allocation_locked(word_size);
+      result = _allocator->attempt_allocation_slow(word_size);
       if (result != nullptr) {
         return result;
       }

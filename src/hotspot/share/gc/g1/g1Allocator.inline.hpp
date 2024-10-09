@@ -71,6 +71,41 @@ inline HeapWord* G1Allocator::attempt_allocation_locked(size_t word_size) {
   return result;
 }
 
+inline HeapWord* G1Allocator::attempt_allocation_slow(size_t word_size) {
+  HeapWord* result = nullptr;
+  size_t dummy;
+  MutatorAllocRegion* alloc_region = mutator_alloc_region(current_node_index());
+
+  while (result == nullptr) {
+    if (alloc_region->try_set_alloc_region_update_state()) {
+      alloc_region->arm_alloc_region_update_barrier();
+      MutexLocker x(Heap_lock); //Only the thread updating alloc region needs to take Heap_lock.
+      result = alloc_region->attempt_allocation_using_new_region(word_size, word_size, &dummy);
+      alloc_region->set_alloc_region_update_state(alloc_region->get() == nullptr ? FAILED : NONE);
+      alloc_region->disarm_alloc_region_update_barrier();
+      if (result == nullptr) {
+        return nullptr;
+      }
+    } else {
+      do {
+        alloc_region->wait_for_alloc_region_update();
+        if (alloc_region->get_alloc_region_update_state() == UPDATEING) {
+          os::naked_yield();
+          if (alloc_region->get_alloc_region_update_state() == UPDATEING) {
+            continue;
+          }
+        }
+        break;
+      } while(true);
+      if (alloc_region->get_alloc_region_update_state() == FAILED) {
+        return nullptr;
+      }
+      result = alloc_region->attempt_allocation(word_size, word_size, &dummy);
+    }
+  }
+  return result;
+}
+
 inline PLAB* G1PLABAllocator::alloc_buffer(G1HeapRegionAttr dest, uint node_index) const {
   assert(dest.is_valid(),
          "Allocation buffer index out of bounds: %s", dest.get_type_str());

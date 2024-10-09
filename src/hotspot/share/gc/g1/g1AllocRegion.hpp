@@ -32,6 +32,12 @@
 
 class G1CollectedHeap;
 
+enum AllocRegionUpdateState {
+  NONE,
+  UPDATEING,
+  FAILED
+};
+
 // A class that holds a region that is active in satisfying allocation
 // requests, potentially issued in parallel. When the active region is
 // full it will be retired and replaced with a new one. The
@@ -81,10 +87,6 @@ private:
   // allocation.
   HeapWord* new_alloc_region_and_allocate(size_t word_size);
 
-  // Perform an allocation out of a new allocation region, retiring the current one.
-  inline HeapWord* attempt_allocation_using_new_region(size_t min_word_size,
-                                                       size_t desired_word_size,
-                                                       size_t* actual_word_size);
 protected:
   // The memory node index this allocation region belongs to.
   uint _node_index;
@@ -154,6 +156,13 @@ public:
                                              size_t desired_word_size,
                                              size_t* actual_word_size);
 
+  // Perform an allocation out of a new allocation region, retiring the current one.
+  inline HeapWord* attempt_allocation_using_new_region(size_t min_word_size,
+                                                       size_t desired_word_size,
+                                                       size_t* actual_word_size);
+
+
+
   // Should be called before we start using this object.
   virtual void init();
 
@@ -179,6 +188,13 @@ private:
   // in a region about to be retired still could fit a TLAB.
   G1HeapRegion* volatile _retained_alloc_region;
 
+  // When need to update _alloc_region,
+  // We need to block other mutator threads somehow,
+  // Currently it relies on Heap_lock, which may cause contention on Heap_lock.
+  WaitBarrierDefault* _alloc_region_update_barrier; // use static?
+
+  AllocRegionUpdateState volatile _alloc_region_update_state;
+
   // Decide if the region should be retained, based on the free size
   // in it and the free size in the currently retained region, if any.
   bool should_retain(G1HeapRegion* region);
@@ -190,7 +206,9 @@ public:
   MutatorAllocRegion(uint node_index)
     : G1AllocRegion("Mutator Alloc Region", node_index),
       _wasted_bytes(0),
-      _retained_alloc_region(nullptr) { }
+      _retained_alloc_region(nullptr),
+      _alloc_region_update_barrier(new WaitBarrierDefault()),
+      _alloc_region_update_state(NONE) { }
 
   // Returns the combined used memory in the current alloc region and
   // the retained alloc region.
@@ -211,6 +229,18 @@ public:
   G1HeapRegion* release() override;
 
   void init() override;
+
+  inline bool try_set_alloc_region_update_state();
+
+  inline void set_alloc_region_update_state(AllocRegionUpdateState state);
+
+  inline void arm_alloc_region_update_barrier() const;
+
+  inline void disarm_alloc_region_update_barrier() const;
+
+  inline AllocRegionUpdateState get_alloc_region_update_state() const;
+
+  inline void wait_for_alloc_region_update() const;
 };
 
 // Common base class for allocation regions used during GC.

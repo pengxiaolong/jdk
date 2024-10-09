@@ -121,6 +121,10 @@ public:
   // current allocation region, and then attempts an allocation using a new region.
   inline HeapWord* attempt_allocation_locked(size_t word_size);
 
+  // Slow path w/o holding Heap_lock, it first tryies in current allocation region,
+  // and then attempts to arm allocation barrier and update heap region for current allocation region.
+  inline HeapWord* attempt_allocation_slow(size_t word_size);
+
   size_t unsafe_max_tlab_alloc();
   size_t used_in_alloc_regions();
 
