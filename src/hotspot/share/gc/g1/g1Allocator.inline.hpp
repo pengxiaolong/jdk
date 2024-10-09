@@ -25,6 +25,8 @@
 #ifndef SHARE_GC_G1_G1ALLOCATOR_INLINE_HPP
 #define SHARE_GC_G1_G1ALLOCATOR_INLINE_HPP
 
+#include <runtime/interfaceSupport.inline.hpp>
+
 #include "gc/g1/g1Allocator.hpp"
 
 #include "gc/g1/g1AllocRegion.inline.hpp"
@@ -68,6 +70,29 @@ inline HeapWord* G1Allocator::attempt_allocation_locked(size_t word_size) {
 
   assert(result != nullptr || mutator_alloc_region(node_index)->get() == nullptr,
          "Must not have a mutator alloc region if there is no memory, but is " PTR_FORMAT, p2i(mutator_alloc_region(node_index)->get()));
+  return result;
+}
+
+inline HeapWord* G1Allocator::attempt_allocation_slow(size_t word_size, uint* gc_count_before) {
+  HeapWord* result = nullptr;
+  size_t dummy;
+
+  uint node_index = current_node_index();
+  MutatorAllocRegion* alloc_region = mutator_alloc_region(node_index);
+  {
+    ThreadBlockInVM tbivm(JavaThread::current());
+    alloc_region->alloc_region_lock()->lock();
+  }
+  result = attempt_allocation(word_size, word_size, &dummy);
+  if (result == nullptr) {
+    MutexLocker x(Heap_lock);
+    result = alloc_region->attempt_allocation_using_new_region(word_size, word_size, &dummy);
+    *gc_count_before = _g1h->total_collections();
+  }
+
+  assert(result != nullptr || mutator_alloc_region(node_index)->get() == nullptr,
+       "Must not have a mutator alloc region if there is no memory, but is " PTR_FORMAT, p2i(mutator_alloc_region(node_index)->get()));
+  alloc_region->alloc_region_lock()->unlock();
   return result;
 }
 

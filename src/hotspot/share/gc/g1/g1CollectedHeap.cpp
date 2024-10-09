@@ -418,20 +418,15 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(size_t word_size) {
   // Case b) is the only case when we'll return null.
   HeapWord* result = nullptr;
   for (uint try_count = 1; /* we'll return */; try_count++) {
-    uint gc_count_before;
+    uint gc_count_before = total_collections();
 
     {
-      MutexLocker x(Heap_lock);
-
       // Now that we have the lock, we first retry the allocation in case another
       // thread changed the region while we were waiting to acquire the lock.
-      result = _allocator->attempt_allocation_locked(word_size);
+      result = _allocator->attempt_allocation_slow(word_size, &gc_count_before);
       if (result != nullptr) {
         return result;
       }
-
-      // Read the GC count while still holding the Heap_lock.
-      gc_count_before = total_collections();
     }
 
     bool succeeded;

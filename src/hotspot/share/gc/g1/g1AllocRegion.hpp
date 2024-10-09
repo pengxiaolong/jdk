@@ -81,10 +81,6 @@ private:
   // allocation.
   HeapWord* new_alloc_region_and_allocate(size_t word_size);
 
-  // Perform an allocation out of a new allocation region, retiring the current one.
-  inline HeapWord* attempt_allocation_using_new_region(size_t min_word_size,
-                                                       size_t desired_word_size,
-                                                       size_t* actual_word_size);
 protected:
   // The memory node index this allocation region belongs to.
   uint _node_index;
@@ -153,6 +149,10 @@ public:
   inline HeapWord* attempt_allocation_locked(size_t min_word_size,
                                              size_t desired_word_size,
                                              size_t* actual_word_size);
+  // Perform an allocation out of a new allocation region, retiring the current one.
+  inline HeapWord* attempt_allocation_using_new_region(size_t min_word_size,
+                                                       size_t desired_word_size,
+                                                       size_t* actual_word_size);
 
   // Should be called before we start using this object.
   virtual void init();
@@ -179,9 +179,12 @@ private:
   // in a region about to be retired still could fit a TLAB.
   G1HeapRegion* volatile _retained_alloc_region;
 
+  PlatformMonitor _alloc_region_lock; // native lock
+
   // Decide if the region should be retained, based on the free size
   // in it and the free size in the currently retained region, if any.
   bool should_retain(G1HeapRegion* region);
+
 protected:
   G1HeapRegion* allocate_new_region(size_t word_size) override;
   void retire_region(G1HeapRegion* alloc_region) override;
@@ -205,6 +208,10 @@ public:
   inline HeapWord* attempt_retained_allocation(size_t min_word_size,
                                                size_t desired_word_size,
                                                size_t* actual_word_size);
+
+  PlatformMonitor* alloc_region_lock() {
+    return &_alloc_region_lock;
+  }
 
   // This specialization of release() makes sure that the retained alloc
   // region is retired and set to null.
