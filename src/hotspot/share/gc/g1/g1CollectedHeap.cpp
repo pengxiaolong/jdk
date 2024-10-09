@@ -420,13 +420,15 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(size_t word_size) {
   for (uint try_count = 1; /* we'll return */; try_count++) {
     uint gc_count_before = total_collections();
 
-    {
-      // Now that we have the lock, we first retry the allocation in case another
-      // thread changed the region while we were waiting to acquire the lock.
-      result = _allocator->attempt_allocation_slow(word_size, &gc_count_before);
-      if (result != nullptr) {
-        return result;
-      }
+    if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
+      VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
+    }
+
+    // Now that we have the lock, we first retry the allocation in case another
+    // thread changed the region while we were waiting to acquire the lock.
+    result = _allocator->attempt_allocation_slow(word_size, &gc_count_before);
+    if (result != nullptr) {
+      return result;
     }
 
     bool succeeded;
@@ -2248,6 +2250,11 @@ HeapWord* G1CollectedHeap::do_collection_pause(size_t word_size,
                                                bool* succeeded,
                                                GCCause::Cause gc_cause) {
   assert_heap_not_locked_and_not_at_safepoint();
+  if (!VM_CollectForAllocation::try_set_collect_for_allocation_started()) {
+    *succeeded = false;
+    return nullptr;
+  }
+
   VM_G1CollectForAllocation op(word_size, gc_count_before, gc_cause);
   VMThread::execute(&op);
 
@@ -2257,6 +2264,10 @@ HeapWord* G1CollectedHeap::do_collection_pause(size_t word_size,
          "the result should be null if the VM did not succeed");
   *succeeded = ret_succeeded;
 
+  if (!op.prologue_succeeded()) {
+    //unset_collect_for_allocation_started has not been invokded if prologue_succeeded is false.
+    VM_CollectForAllocation::unset_collect_for_allocation_started();
+  }
   assert_heap_not_locked();
   return result;
 }

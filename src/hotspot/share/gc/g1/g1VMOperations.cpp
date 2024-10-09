@@ -114,6 +114,7 @@ VM_G1CollectForAllocation::VM_G1CollectForAllocation(size_t         word_size,
   _gc_succeeded(false) {}
 
 void VM_G1CollectForAllocation::doit() {
+  unset_collect_for_allocation_started();
   G1CollectedHeap* g1h = G1CollectedHeap::heap();
 
   GCCauseSetter x(g1h, _gc_cause);
