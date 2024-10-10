@@ -85,8 +85,8 @@ inline HeapWord* G1Allocator::attempt_allocation_slow(size_t word_size, uint* gc
   }
   result = attempt_allocation(word_size, word_size, &dummy);
   if (result == nullptr) {
-    MutexLocker x(Heap_lock);
-    result = alloc_region->attempt_allocation_using_new_region(word_size, word_size, &dummy);
+    //MutexLocker x(Heap_lock);
+    result = alloc_region->attempt_allocation_using_new_region_not_locked(word_size, word_size, &dummy);
     *gc_count_before = _g1h->total_collections();
   }
 

@@ -107,4 +107,35 @@ inline HeapWord* MutatorAllocRegion::attempt_retained_allocation(size_t min_word
   return nullptr;
 }
 
+inline HeapWord* MutatorAllocRegion::attempt_allocation_using_new_region_not_locked(size_t min_word_size,
+                                                                                    size_t desired_word_size,
+                                                                                    size_t* actual_word_size) {
+  retire(true /* fill_up */);
+  G1HeapRegion* new_alloc_region = nullptr;
+  {
+    MutexLocker x(Heap_lock);
+    trace("attempting region allocation");
+    new_alloc_region = allocate_new_region(desired_word_size);
+  }
+  if (new_alloc_region != nullptr) {
+    new_alloc_region->reset_pre_dummy_top();
+
+    assert(new_alloc_region->is_empty(), "new regions should be empty");
+    HeapWord* result = new_alloc_region->allocate(desired_word_size);
+    *actual_word_size = desired_word_size;
+    assert_alloc_region(result != nullptr, "the allocation should succeeded");
+
+    OrderAccess::storestore();
+    // Note that we first perform the allocation and then we store the
+    // region in _alloc_region. This is the reason why an active region
+    // can never be empty.
+    update_alloc_region(new_alloc_region);
+    return result;
+  } else {
+    trace("region allocation failed");
+    return nullptr;
+  }
+  ShouldNotReachHere();
+}
+
 #endif // SHARE_GC_G1_G1ALLOCREGION_INLINE_HPP

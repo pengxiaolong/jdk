@@ -75,7 +75,7 @@ private:
 
   // After a region is allocated by alloc_new_region, this
   // method is used to set it as the active alloc_region
-  void update_alloc_region(G1HeapRegion* alloc_region);
+  //void update_alloc_region(G1HeapRegion* alloc_region);
 
   // Allocate a new active region and use it to perform a word_size
   // allocation.
@@ -113,6 +113,8 @@ protected:
 
   virtual G1HeapRegion* allocate_new_region(size_t word_size) = 0;
   virtual void retire_region(G1HeapRegion* alloc_region) = 0;
+
+  void update_alloc_region(G1HeapRegion* alloc_region);
 
   G1AllocRegion(const char* name, uint node_index);
 
@@ -208,6 +210,11 @@ public:
   inline HeapWord* attempt_retained_allocation(size_t min_word_size,
                                                size_t desired_word_size,
                                                size_t* actual_word_size);
+
+  // Perform an allocation out of a new allocation region, retiring the current one.
+  inline HeapWord* attempt_allocation_using_new_region_not_locked(size_t min_word_size,
+                                                                  size_t desired_word_size,
+                                                                  size_t* actual_word_size);
 
   PlatformMonitor* alloc_region_lock() {
     return &_alloc_region_lock;

@@ -417,11 +417,18 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(size_t word_size) {
   // successfully schedule a collection which fails to perform the allocation.
   // Case b) is the only case when we'll return null.
   HeapWord* result = nullptr;
+  size_t dummy;
   for (uint try_count = 1; /* we'll return */; try_count++) {
     uint gc_count_before = total_collections();
 
     if (VM_CollectForAllocation::is_collect_for_allocation_started()) {
       VM_CollectForAllocation::wait_at_collect_for_allocation_barrier();
+    }
+
+    size_t dummy;
+    HeapWord* result = _allocator->attempt_allocation(word_size, word_size, &dummy);
+    if (result != nullptr) {
+      return result;
     }
 
     // Now that we have the lock, we first retry the allocation in case another
@@ -448,12 +455,12 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(size_t word_size) {
     // reclaimed enough space. The first attempt (without holding the Heap_lock) is
     // here and the follow-on attempt will be at the start of the next loop
     // iteration (after taking the Heap_lock).
-    size_t dummy = 0;
+    /*size_t dummy = 0;
     result = _allocator->attempt_allocation(word_size, word_size, &dummy);
     if (result != nullptr) {
       return result;
     }
-
+    */
     // Give a warning if we seem to be looping forever.
     if ((QueuedAllocationWarningCount > 0) &&
         (try_count % QueuedAllocationWarningCount == 0)) {
@@ -583,13 +590,14 @@ inline HeapWord* G1CollectedHeap::attempt_allocation(size_t min_word_size,
   assert(!is_humongous(desired_word_size), "attempt_allocation() should not "
          "be called for humongous allocation requests");
 
-  HeapWord* result = _allocator->attempt_allocation(min_word_size, desired_word_size, actual_word_size);
-
+  *actual_word_size = desired_word_size;
+  HeapWord* result = attempt_allocation_slow(desired_word_size); //_allocator->attempt_allocation(min_word_size, desired_word_size, actual_word_size);
+/*
   if (result == nullptr) {
     *actual_word_size = desired_word_size;
     result = attempt_allocation_slow(desired_word_size);
   }
-
+*/
   assert_heap_not_locked();
   if (result != nullptr) {
     assert(*actual_word_size != 0, "Actual size must have been set here");
