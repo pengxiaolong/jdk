@@ -68,19 +68,25 @@ private:
   ShenandoahRegionIterator _regions;
   ShenandoahGeneration* _generation;
   bool const _include_not_affiliated;
+  bool const _include_all_trash;
 
 public:
-  ShenandoahResetBitmapTask(ShenandoahGeneration* generation, bool const include_not_affiliated = true) :
+  ShenandoahResetBitmapTask(ShenandoahGeneration* generation,
+                            bool const include_not_affiliated,
+                            bool const include_all_trash) :
     WorkerTask("Shenandoah Reset Bitmap"),
     _generation(generation),
-    _include_not_affiliated(include_not_affiliated){}
+    _include_not_affiliated(include_not_affiliated),
+    _include_all_trash(include_all_trash) {}
 
   void work(uint worker_id) {
     ShenandoahHeapRegion* region = _regions.next();
     ShenandoahHeap* heap = ShenandoahHeap::heap();
     ShenandoahMarkingContext* const ctx = heap->marking_context();
     while (region != nullptr) {
-      bool needs_reset = _generation->contains(region) || (_include_not_affiliated && !region->is_affiliated());
+      bool needs_reset = _generation->contains(region) ||
+                         (_include_not_affiliated && !region->is_affiliated()) ||
+                         (_include_all_trash && region->is_trash());
       if (needs_reset && heap->is_bitmap_slice_committed(region)) {
         ctx->clear_bitmap(region);
       }
@@ -191,11 +197,11 @@ void ShenandoahGeneration::log_status(const char *msg) const {
                    byte_size_in_proper_unit(v_available),         proper_unit_for_byte_size(v_available));
 }
 
-void ShenandoahGeneration::reset_mark_bitmap(bool include_not_affiliated) {
+void ShenandoahGeneration::reset_mark_bitmap(bool include_not_affiliated, bool include_all_trash) {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
   heap->assert_gc_workers(heap->workers()->active_workers());
 
-  ShenandoahResetBitmapTask task(this, include_not_affiliated);
+  ShenandoahResetBitmapTask task(this, include_not_affiliated, include_all_trash);
   heap->workers()->run_task(&task);
 }
 
@@ -234,7 +240,7 @@ void ShenandoahGeneration::prepare_gc() {
     if (heap->mode()->is_generational() && is_global() && !heap->young_generation()->need_bitmap_reset()) {
       assert(heap->young_generation()->is_bitmap_clear(), "Bitmap of young generation must be clear.");
       //Only need to reset bitmap for old generation.
-      heap->old_generation()->reset_mark_bitmap(false);
+      heap->old_generation()->reset_mark_bitmap(false/*include_not_affiliated*/);
     } else {
       reset_mark_bitmap();
     }
