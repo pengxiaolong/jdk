@@ -352,6 +352,7 @@ private:
   HeapWord* try_allocate_from_mutator(ShenandoahAllocRequest& req, bool& in_new_region);
 
   void clear_internal();
+  template<bool CLEAR_BITMAP_AFTER_RECYCLE = false>
   void try_recycle_trashed(ShenandoahHeapRegion *r);
 
   // Returns true iff this region is entirely available, either because it is empty() or because it has been found to represent

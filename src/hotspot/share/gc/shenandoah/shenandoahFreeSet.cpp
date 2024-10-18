@@ -977,7 +977,7 @@ HeapWord* ShenandoahFreeSet::try_allocate_in(ShenandoahHeapRegion* r, Shenandoah
     return nullptr;
   }
   HeapWord* result = nullptr;
-  try_recycle_trashed(r);
+  try_recycle_trashed<true>(r);
   in_new_region = r->is_empty();
 
   if (in_new_region) {
@@ -1188,7 +1188,7 @@ HeapWord* ShenandoahFreeSet::allocate_contiguous(ShenandoahAllocRequest& req) {
   // Initialize regions:
   for (idx_t i = beg; i <= end; i++) {
     ShenandoahHeapRegion* r = _heap->get_region(i);
-    try_recycle_trashed(r);
+    try_recycle_trashed<true>(r);
 
     assert(i == beg || _heap->get_region(i - 1)->index() + 1 == r->index(), "Should be contiguous");
     assert(r->is_empty(), "Should be empty");
@@ -1230,9 +1230,13 @@ HeapWord* ShenandoahFreeSet::allocate_contiguous(ShenandoahAllocRequest& req) {
   return _heap->get_region(beg)->bottom();
 }
 
+template<bool CLEAR_BITMAP_AFTER_RECYCLE>
 void ShenandoahFreeSet::try_recycle_trashed(ShenandoahHeapRegion* r) {
   if (r->is_trash()) {
     r->recycle();
+    if (CLEAR_BITMAP_AFTER_RECYCLE) {
+      _heap->marking_context()->clear_bitmap(r);
+    }
   }
 }
 
