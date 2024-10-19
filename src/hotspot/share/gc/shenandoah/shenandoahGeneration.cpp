@@ -234,7 +234,7 @@ void ShenandoahGeneration::prepare_gc() {
     if (heap->mode()->is_generational() && is_global() && !heap->young_generation()->need_bitmap_reset()) {
       assert(heap->young_generation()->is_bitmap_clear(), "Bitmap of young generation must be clear.");
       //Only need to reset bitmap for old generation.
-      heap->old_generation()->reset_mark_bitmap(false);
+      heap->old_generation()->reset_mark_bitmap();
     } else {
       reset_mark_bitmap();
     }
