@@ -229,15 +229,8 @@ void ShenandoahGeneration::merge_write_table() {
 }
 
 void ShenandoahGeneration::prepare_gc() {
-  ShenandoahHeap* const heap = ShenandoahHeap::heap();
   if (need_bitmap_reset()) {
-    if (heap->mode()->is_generational() && is_global() && !heap->young_generation()->need_bitmap_reset()) {
-      assert(heap->young_generation()->is_bitmap_clear(), "Bitmap of young generation must be clear.");
-      //Only need to reset bitmap for old generation.
-      heap->old_generation()->reset_mark_bitmap();
-    } else {
-      reset_mark_bitmap();
-    }
+    reset_mark_bitmap();
   }
   // For next cycle
   set_need_bitmap_reset();
