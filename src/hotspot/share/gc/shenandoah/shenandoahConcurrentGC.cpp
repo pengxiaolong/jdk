@@ -182,6 +182,7 @@ bool ShenandoahConcurrentGC::collect(GCCause::Cause cause) {
     entry_strong_roots();
   }
 
+  bool reset_after_collect = false;
   // Continue the cycle with evacuation and optional update-refs.
   // This may be skipped if there is nothing to evacuate.
   // If so, evac_in_progress would be unset by collection set preparation code.
@@ -210,9 +211,7 @@ bool ShenandoahConcurrentGC::collect(GCCause::Cause cause) {
     // Update references freed up collection set, kick the cleanup to reclaim the space.
     entry_cleanup_complete();
 
-    // Instead of always reset before collect, some reset can be done after collect to save
-    // the time before before the cycle so the cycle can be started as soon as possible.
-    entry_reset_after_collect();
+    reset_after_collect = true;
   } else {
     // We chose not to evacuate because we found sufficient immediate garbage.
     // However, there may still be regions to promote in place, so do that now.
@@ -239,6 +238,12 @@ bool ShenandoahConcurrentGC::collect(GCCause::Cause cause) {
   // abbreviated cycle.
   if (heap->mode()->is_generational()) {
     ShenandoahGenerationalHeap::heap()->complete_concurrent_cycle();
+  }
+
+  if (reset_after_collect) {
+    // Instead of always reset before collect, some reset can be done after collect to save
+    // the time before before the cycle so the cycle can be started as soon as possible.
+    entry_reset_after_collect();
   }
 
   return true;
