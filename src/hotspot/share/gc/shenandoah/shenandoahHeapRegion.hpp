@@ -189,29 +189,29 @@ public:
   void make_committed_bypass();
 
   // Individual states:
-  bool is_empty_uncommitted()      const { return _state == _empty_uncommitted; }
-  bool is_empty_committed()        const { return _state == _empty_committed; }
-  bool is_regular()                const { return _state == _regular; }
-  bool is_humongous_continuation() const { return _state == _humongous_cont; }
+  bool is_empty_uncommitted()      const { return Atomic::load(&_state) == _empty_uncommitted; }
+  bool is_empty_committed()        const { return Atomic::load(&_state) == _empty_committed; }
+  bool is_regular()                const { return Atomic::load(&_state) == _regular; }
+  bool is_humongous_continuation() const { return Atomic::load(&_state) == _humongous_cont; }
 
   // Participation in logical groups:
   bool is_empty()                  const { return is_empty_committed() || is_empty_uncommitted(); }
   bool is_active()                 const { return !is_empty() && !is_trash(); }
-  bool is_trash()                  const { return _state == _trash; }
-  bool is_humongous_start()        const { return _state == _humongous_start || _state == _pinned_humongous_start; }
+  bool is_trash()                  const { return Atomic::load(&_state) == _trash; }
+  bool is_humongous_start()        const { auto const state = Atomic::load(&_state); return state == _humongous_start || state == _pinned_humongous_start; }
   bool is_humongous()              const { return is_humongous_start() || is_humongous_continuation(); }
   bool is_committed()              const { return !is_empty_uncommitted(); }
-  bool is_cset()                   const { return _state == _cset   || _state == _pinned_cset; }
-  bool is_pinned()                 const { return _state == _pinned || _state == _pinned_cset || _state == _pinned_humongous_start; }
-  bool is_regular_pinned()         const { return _state == _pinned; }
+  bool is_cset()                   const { auto const state = Atomic::load(&_state); return state == _cset   || state == _pinned_cset; }
+  bool is_pinned()                 const { auto const state = Atomic::load(&_state); return state == _pinned || state == _pinned_cset || state == _pinned_humongous_start; }
+  bool is_regular_pinned()         const { return Atomic::load(&_state) == _pinned; }
 
   inline bool is_young() const;
   inline bool is_old() const;
   inline bool is_affiliated() const;
 
   // Macro-properties:
-  bool is_alloc_allowed()          const { return is_empty() || is_regular() || _state == _pinned; }
-  bool is_stw_move_allowed()       const { return is_regular() || _state == _cset || (ShenandoahHumongousMoves && _state == _humongous_start); }
+  bool is_alloc_allowed()          const { return is_empty() || is_regular() || Atomic::load(&_state) == _pinned; }
+  bool is_stw_move_allowed()       const { auto const state = Atomic::load(&_state); return is_regular() || state == _cset || (ShenandoahHumongousMoves && state == _humongous_start); }
 
   RegionState state()              const { return _state; }
   int  state_ordinal()             const { return region_state_to_ordinal(_state); }
@@ -243,7 +243,7 @@ private:
   HeapWord* _top_before_promoted;
 
   // Seldom updated fields
-  RegionState _state;
+  volatile RegionState _state;
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
   // Frequently updated fields
