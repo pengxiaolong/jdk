@@ -434,6 +434,7 @@ void ShenandoahGenerationalControlThread::service_concurrent_old_cycle(Shenandoa
       ShenandoahGCSession session(cause, old_generation);
       _allow_old_preemption.set();
       old_generation->entry_coalesce_and_fill();
+      young_generation->set_need_bitmap_reset();
       _allow_old_preemption.unset();
 
       // Before bootstrapping begins, we must acknowledge any cancellation request.

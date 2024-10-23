@@ -74,12 +74,20 @@ public:
 
   void work(uint worker_id) {
     ShenandoahHeapRegion* region = _regions.next();
+    auto const affiliation = region->affiliation();
     ShenandoahHeap* heap = ShenandoahHeap::heap();
     ShenandoahMarkingContext* const ctx = heap->marking_context();
     while (region != nullptr) {
-      bool needs_reset = _generation->contains(region) || !region->is_affiliated();
-      if (needs_reset && heap->is_bitmap_slice_committed(region)) {
-        ctx->clear_bitmap(region);
+      bool needs_reset = _generation->contains(region) || _generation->contains(region) || !region->is_affiliated();
+      if (needs_reset) {
+        if (heap->is_bitmap_slice_committed(region)) {
+          ctx->clear_bitmap(region);
+          //log_info(gc)("Bitmap has been cleared for region (" PTR_FORMAT ").", p2i(region));
+	} else {
+          log_info(gc)("Skip region (" PTR_FORMAT ") due bitmap slice is not commited.", p2i(region));
+        }
+      } else {
+        log_info(gc)("Not reseting bitmap for %s region (" PTR_FORMAT ")(affiliation when test: %s)", region->affiliation_name(), p2i(region), shenandoah_affiliation_name(affiliation));
       }
       region = _regions.next();
     }
@@ -757,6 +765,11 @@ bool ShenandoahGeneration::is_bitmap_clear() {
     if (contains(r) && r->is_affiliated()) {
       if (heap->is_bitmap_slice_committed(r) && (context->top_at_mark_start(r) > r->bottom()) &&
           !context->is_bitmap_clear_range(r->bottom(), r->end())) {
+        log_info(gc)("Region (" PTR_FORMAT ") doesn't have clear bitmap, [%i, %i, %i]",
+          p2i(r),
+          heap->is_bitmap_slice_committed(r),
+          context->top_at_mark_start(r) > r->bottom(),
+          !context->is_bitmap_clear_range(r->bottom(), r->end()));
         return false;
       }
     }
