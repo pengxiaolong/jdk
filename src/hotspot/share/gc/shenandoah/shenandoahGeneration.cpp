@@ -74,10 +74,10 @@ public:
 
   void work(uint worker_id) {
     ShenandoahHeapRegion* region = _regions.next();
-    auto const affiliation = region->affiliation();
     ShenandoahHeap* heap = ShenandoahHeap::heap();
     ShenandoahMarkingContext* const ctx = heap->marking_context();
     while (region != nullptr) {
+      auto const affiliation = region->affiliation();
       bool needs_reset = _generation->contains(region) || _generation->contains(region) || !region->is_affiliated();
       if (needs_reset) {
         if (heap->is_bitmap_slice_committed(region)) {
