@@ -253,9 +253,9 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
     return;
   }
 
-  jlong const max_delay = ShenandoahPacingMaxDelay * NANOSECS_PER_MILLISEC;
-  jlong const start_time = os::elapsed_counter();
-  while (!claimed && (os::elapsed_counter() - start_time) < max_delay) {
+  jlong const start_time = os::javaTimeNanos();
+  jlong const deadline = start_time + ShenandoahPacingMaxDelay * NANOSECS_PER_MILLISEC;
+  while (!claimed && os::javaTimeNanos() < deadline) {
     // We could instead assist GC, but this would suffice for now.
     wait(1);
     claimed = claim_for_alloc<false>(words);
@@ -267,7 +267,7 @@ void ShenandoahPacer::pace_for_alloc(size_t words) {
     claimed = claim_for_alloc<true>(words);
     assert(claimed, "Should always succeed");
   }
-  ShenandoahThreadLocalData::add_paced_time(current, (double)(os::elapsed_counter() - start_time) / NANOSECS_PER_SEC);
+  ShenandoahThreadLocalData::add_paced_time(current, (double)(os::javaTimeNanos() - start_time) / NANOSECS_PER_SEC);
 }
 
 void ShenandoahPacer::wait(size_t time_ms) {
