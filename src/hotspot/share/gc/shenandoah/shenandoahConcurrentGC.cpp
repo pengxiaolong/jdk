@@ -1184,7 +1184,18 @@ void ShenandoahConcurrentGC::op_cleanup_complete() {
   ShenandoahWorkerScope scope(ShenandoahHeap::heap()->workers(),
                               ShenandoahWorkerPolicy::calc_workers_for_conc_cleanup(),
                               "cleanup complete.");
-  ShenandoahHeap::heap()->recycle_trash();
+  ShenandoahHeap* const heap = ShenandoahHeap::heap();
+  heap->recycle_trash();
+
+  if (heap->mode()->is_generational()) {
+    if (!_do_old_gc_bootstrap) {
+      // Only reset for young generation, bitmap for old generation must be retained,
+      // except there is collection(global/old/degen/full) trigged to collect regions in old gen.
+      heap->young_generation()->reset_mark_bitmap<false>();
+    }
+  } else {
+    _generation->reset_mark_bitmap<false>();
+  }
 }
 
 bool ShenandoahConcurrentGC::check_cancellation_and_abort(ShenandoahDegenPoint point) {

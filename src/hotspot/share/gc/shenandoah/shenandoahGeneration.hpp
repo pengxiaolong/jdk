@@ -159,6 +159,7 @@ private:
   void log_status(const char* msg) const;
 
   // Used directly by FullGC
+  template <bool FOR_CURRENT_CYCLE>
   void reset_mark_bitmap();
 
   // Used by concurrent and degenerated GC to reset remembered set.
