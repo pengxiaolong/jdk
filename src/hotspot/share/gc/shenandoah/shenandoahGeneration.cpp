@@ -63,7 +63,7 @@ public:
   bool is_thread_safe() override { return true; }
 };
 
-template <bool FOR_CURRENT_CYCLE>
+template <bool PREPARE_FOR_CURRENT_CYCLE>
 class ShenandoahResetBitmapClosure final : public ShenandoahHeapRegionClosure {
 private:
   ShenandoahHeap*           _heap;
@@ -75,7 +75,7 @@ public:
 
   void heap_region_do(ShenandoahHeapRegion* region) override {
     assert(!_heap->is_uncommit_in_progress(), "Cannot uncommit bitmaps while resetting them.");
-    if (FOR_CURRENT_CYCLE) {
+    if (PREPARE_FOR_CURRENT_CYCLE) {
       if (region->need_bitmap_reset() && _heap->is_bitmap_slice_committed(region)) {
         _ctx->clear_bitmap(region);
       } else {
@@ -94,6 +94,7 @@ public:
         _ctx->clear_bitmap(region);
         region->unset_need_bitmap_reset();
       } else {
+        // Make sure the flag is set if reset is not done after current cycle.
         region->set_need_bitmap_reset();
       }
     }
@@ -236,14 +237,14 @@ void ShenandoahGeneration::log_status(const char *msg) const {
                    byte_size_in_proper_unit(v_available),         proper_unit_for_byte_size(v_available));
 }
 
-template <bool FOR_CURRENT_CYCLE>
+template <bool PREPARE_FOR_CURRENT_CYCLE>
 void ShenandoahGeneration::reset_mark_bitmap() {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
   heap->assert_gc_workers(heap->workers()->active_workers());
 
   set_mark_incomplete();
 
-  ShenandoahResetBitmapClosure<FOR_CURRENT_CYCLE> closure;
+  ShenandoahResetBitmapClosure<PREPARE_FOR_CURRENT_CYCLE> closure;
   parallel_heap_region_iterate_free(&closure);
 }
 // Explicit specializations
