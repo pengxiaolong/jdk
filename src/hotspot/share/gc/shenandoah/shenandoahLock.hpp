@@ -30,7 +30,8 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/safepoint.hpp"
 
-class ShenandoahLock  {
+template<bool REENTRANT>
+class ShenandoahLockImpl {
 private:
   enum LockState { unlocked = 0, locked = 1 };
 
@@ -39,14 +40,22 @@ private:
   shenandoah_padding(1);
   Thread* volatile _owner;
   shenandoah_padding(2);
-
+  uint64_t volatile _count;
+  shenandoah_padding(3);
   template<bool ALLOW_BLOCK>
   void contended_lock_internal(JavaThread* java_thread);
 public:
-  ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
+  ShenandoahLockImpl() : _state(unlocked), _owner(nullptr), _count(0) {};
 
-  void lock(bool allow_block_for_safepoint) {
-    assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
+  void lock(bool allow_block_for_safepoint = false) {
+    if (!REENTRANT) {
+      assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
+    }
+
+    if (REENTRANT && owned_by_self()) {
+      Atomic::add(&_count, (uint64_t) 1);
+      return;
+    }
 
     if ((allow_block_for_safepoint && SafepointSynchronize::is_synchronizing()) ||
         (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked)) {
@@ -57,90 +66,71 @@ public:
     }
 
     assert(Atomic::load(&_state) == locked, "must be locked");
-    assert(Atomic::load(&_owner) == nullptr, "must not be owned");
-    DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
+
+    if (REENTRANT) {
+      Atomic::store(&_owner, Thread::current());
+      Atomic::add(&_count, (uint64_t) 1);
+    } else {
+      assert(Atomic::load(&_owner) == nullptr, "must not be owned");
+      DEBUG_ONLY(Atomic::store(&_owner, Thread::current());)
+    }
   }
 
   void unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
-    DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
-    OrderAccess::fence();
-    Atomic::store(&_state, unlocked);
+    if (REENTRANT) {
+      assert(Atomic::load(&_count) > 0, "sanity");
+      auto newValue = Atomic::add(&_count, (uint64_t)-1);
+      if (newValue == 0) {
+        Atomic::store(&_owner, (Thread*)nullptr);
+        OrderAccess::fence();
+        Atomic::store(&_state, unlocked);
+      }
+    } else {
+      DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
+      OrderAccess::fence();
+      Atomic::store(&_state, unlocked);
+    }
   }
 
   void contended_lock(bool allow_block_for_safepoint);
 
-  bool owned_by_self() {
+  inline bool owned_by_self() {
+    if (REENTRANT) {
+      return Atomic::load(&_state) == locked && Atomic::load(&_owner) == Thread::current();
+    } else {
 #ifdef ASSERT
-    return _state == locked && _owner == Thread::current();
+      return Atomic::load(&_state) == locked && Atomic::load(&_owner) == Thread::current();
 #else
-    ShouldNotReachHere();
-    return false;
+      ShouldNotReachHere();
+      return false;
 #endif
+    }
   }
 };
 
-class ShenandoahLocker : public StackObj {
+template<bool REENTRANT>
+class ShenandoahLockerImpl : public StackObj {
 private:
-  ShenandoahLock* const _lock;
+  ShenandoahLockImpl<REENTRANT>* const _lock;
 public:
-  ShenandoahLocker(ShenandoahLock* lock, bool allow_block_for_safepoint = false) : _lock(lock) {
+  ShenandoahLockerImpl(ShenandoahLockImpl<REENTRANT>* lock, bool allow_block_for_safepoint = false) : _lock(lock) {
     if (_lock != nullptr) {
       _lock->lock(allow_block_for_safepoint);
     }
   }
 
-  ~ShenandoahLocker() {
+  ~ShenandoahLockerImpl() {
     if (_lock != nullptr) {
       _lock->unlock();
     }
   }
 };
 
-class ShenandoahSimpleLock {
-private:
-  PlatformMonitor   _lock; // native lock
-public:
-  ShenandoahSimpleLock();
+typedef ShenandoahLockImpl<false>   ShenandoahLock;
+typedef ShenandoahLockerImpl<false> ShenandoahLocker;
 
-  virtual void lock();
-  virtual void unlock();
-};
-
-class ShenandoahReentrantLock : public ShenandoahSimpleLock {
-private:
-  Thread* volatile      _owner;
-  uint64_t              _count;
-
-public:
-  ShenandoahReentrantLock();
-  ~ShenandoahReentrantLock();
-
-  virtual void lock();
-  virtual void unlock();
-
-  // If the lock already owned by this thread
-  bool owned_by_self() const ;
-};
-
-class ShenandoahReentrantLocker : public StackObj {
-private:
-  ShenandoahReentrantLock* const _lock;
-
-public:
-  ShenandoahReentrantLocker(ShenandoahReentrantLock* lock) :
-    _lock(lock) {
-    if (_lock != nullptr) {
-      _lock->lock();
-    }
-  }
-
-  ~ShenandoahReentrantLocker() {
-    if (_lock != nullptr) {
-      assert(_lock->owned_by_self(), "Must be owner");
-      _lock->unlock();
-    }
-  }
-};
+typedef ShenandoahLockImpl<true>    ShenandoahReentrantLock;
+typedef ShenandoahLockerImpl<true>  ShenandoahReentrantLocker;
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHLOCK_HPP

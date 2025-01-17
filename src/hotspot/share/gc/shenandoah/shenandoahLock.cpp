@@ -32,7 +32,8 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/os.inline.hpp"
 
-void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
+template<bool REENTRANT>
+void ShenandoahLockImpl<REENTRANT>::contended_lock(bool allow_block_for_safepoint) {
   Thread* thread = Thread::current();
   if (allow_block_for_safepoint && thread->is_Java_thread()) {
     contended_lock_internal<true>(JavaThread::cast(thread));
@@ -41,8 +42,12 @@ void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
   }
 }
 
+template void ShenandoahLockImpl<true>::contended_lock(bool allow_block_for_safepoint);
+template void ShenandoahLockImpl<false>::contended_lock(bool allow_block_for_safepoint);
+
+template<bool REENTRANT>
 template<bool ALLOW_BLOCK>
-void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
+void ShenandoahLockImpl<REENTRANT>::contended_lock_internal(JavaThread* java_thread) {
   assert(!ALLOW_BLOCK || java_thread != nullptr, "Must have a Java thread when allowing block.");
   // Spin this much, but only on multi-processor systems.
   int ctr = os::is_MP() ? 0xFF : 0;
@@ -77,55 +82,4 @@ void ShenandoahLock::contended_lock_internal(JavaThread* java_thread) {
       os::naked_yield();
     }
   }
-}
-
-ShenandoahSimpleLock::ShenandoahSimpleLock() {
-  assert(os::mutex_init_done(), "Too early!");
-}
-
-void ShenandoahSimpleLock::lock() {
-  _lock.lock();
-}
-
-void ShenandoahSimpleLock::unlock() {
-  _lock.unlock();
-}
-
-ShenandoahReentrantLock::ShenandoahReentrantLock() :
-  ShenandoahSimpleLock(), _owner(nullptr), _count(0) {
-  assert(os::mutex_init_done(), "Too early!");
-}
-
-ShenandoahReentrantLock::~ShenandoahReentrantLock() {
-  assert(_count == 0, "Unbalance");
-}
-
-void ShenandoahReentrantLock::lock() {
-  Thread* const thread = Thread::current();
-  Thread* const owner = Atomic::load(&_owner);
-
-  if (owner != thread) {
-    ShenandoahSimpleLock::lock();
-    Atomic::store(&_owner, thread);
-  }
-
-  _count++;
-}
-
-void ShenandoahReentrantLock::unlock() {
-  assert(owned_by_self(), "Invalid owner");
-  assert(_count > 0, "Invalid count");
-
-  _count--;
-
-  if (_count == 0) {
-    Atomic::store(&_owner, (Thread*)nullptr);
-    ShenandoahSimpleLock::unlock();
-  }
-}
-
-bool ShenandoahReentrantLock::owned_by_self() const {
-  Thread* const thread = Thread::current();
-  Thread* const owner = Atomic::load(&_owner);
-  return owner == thread;
 }
