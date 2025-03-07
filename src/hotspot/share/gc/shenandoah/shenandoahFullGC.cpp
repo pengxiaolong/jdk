@@ -1128,10 +1128,10 @@ void ShenandoahFullGC::phase5_epilog() {
   // Reset complete bitmap. We're about to reset the complete-top-at-mark-start pointer
   // and must ensure the bitmap is in sync.
   {
-    heap->global_generation()->set_mark_incomplete();
     ShenandoahGCPhase phase(ShenandoahPhaseTimings::full_gc_copy_objects_reset_complete);
     ShenandoahMCResetCompleteBitmapTask task;
     heap->workers()->run_task(&task);
+    heap->global_generation()->set_mark_incomplete();
   }
 
   // Bring regions in proper states after the collection, and set heap properties.
