@@ -1276,7 +1276,7 @@ public:
   void do_oop(oop* p)       override { work(p); }
 };
 
-template<typename Scanner, bool AFTER_FULL_GC>
+template<bool AFTER_FULL_GC, typename Scanner>
 void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, ShenandoahHeapRegion* old_region,
                                                     HeapWord* registration_watermark, const char* message) {
   ShenandoahVerifyRemSetClosure<Scanner> check_interesting_pointers(scanner, message);
@@ -1372,7 +1372,7 @@ void ShenandoahVerifier::verify_rem_set_after_full_gc() {
   for (size_t i = 0, n = _heap->num_regions(); i < n; ++i) {
     ShenandoahHeapRegion* r = _heap->get_region(i);
     if (r->is_old() && !r->is_cset()) {
-      help_verify_region_rem_set(&scanner, r, r->top(), "Remembered set violation at end of Full GC");
+      help_verify_region_rem_set<true>(&scanner, r, r->top(), "Remembered set violation at end of Full GC");
     }
   }
 }
