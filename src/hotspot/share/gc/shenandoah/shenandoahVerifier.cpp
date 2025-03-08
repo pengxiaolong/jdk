@@ -1282,12 +1282,12 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
   assert(old_region->is_old(), "Sanity check");
   ShenandoahVerifyRemSetClosure<Scanner> check_interesting_pointers(scanner, message);
   const bool old_marking_complete = _heap->old_generation()->is_mark_complete();
-  ShenandoahMarkingContext* ctx = _heap->marking_context();
+  ShenandoahMarkingContext* complete_marking_ctx = old_marking_complete ? _heap->marking_context() : nullptr;
   HeapWord* from = old_region->bottom();
   HeapWord* obj_addr = from;
   if (old_region->is_humongous_start()) {
     oop obj = cast_to_oop(obj_addr);
-    if (AFTER_FULL_GC || (old_marking_complete &&  ctx->is_marked(obj))) {
+    if (AFTER_FULL_GC || (old_marking_complete &&  complete_marking_ctx->is_marked(obj))) {
       // For humongous objects, the typical object is an array, so the following checks may be overkill
       // For regular objects (not object arrays), if the card holding the start of the object is dirty,
       // we do not need to verify that cards spanning interesting pointers within this object are dirty.
@@ -1298,16 +1298,16 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
     }
     // else, this humongous object is not live so no need to verify its internal pointers
 
-    if ((obj_addr < registration_watermark) && !scanner->verify_registration(obj_addr, ctx)) {
+    if ((obj_addr < registration_watermark) && !scanner->verify_registration(obj_addr, complete_marking_ctx)) {
       ShenandoahAsserts::print_failure(ShenandoahAsserts::_safe_all, obj, obj_addr, nullptr, message,
                                        "object not properly registered", __FILE__, __LINE__);
     }
   } else if (!old_region->is_humongous()) {
-    HeapWord* top = old_region->top();
+    HeapWord* top = old_marking_complete ? complete_marking_ctx->top_at_mark_start(old_region) : old_region->top();
     while (obj_addr < top) {
       oop obj = cast_to_oop(obj_addr);
       // ctx->is_marked() returns true if mark bit set or if obj above TAMS.
-      if (AFTER_FULL_GC || (old_marking_complete && ctx->is_marked(obj))) {
+      if (AFTER_FULL_GC || (old_marking_complete && complete_marking_ctx->is_marked(obj))) {
         // For regular objects (not object arrays), if the card holding the start of the object is dirty,
         // we do not need to verify that cards spanning interesting pointers within this object are dirty.
         if (!scanner->is_card_dirty(obj_addr) || obj->is_objArray()) {
@@ -1315,15 +1315,14 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
         }
         // else, object's start is marked dirty and obj is not an objArray, so any interesting pointers are covered
 
-        if ((obj_addr < registration_watermark) && !scanner->verify_registration(obj_addr, ctx)) {
+        if ((obj_addr < registration_watermark) && !scanner->verify_registration(obj_addr, complete_marking_ctx)) {
           ShenandoahAsserts::print_failure(ShenandoahAsserts::_safe_all, obj, obj_addr, nullptr, message,
                                            "object not properly registered", __FILE__, __LINE__);
         }
         obj_addr += obj->size();
       } else {
         // This object is not live so we don't verify dirty cards contained therein
-        HeapWord* tams = ctx->top_at_mark_start(old_region);
-        obj_addr = ctx->get_next_marked_addr(obj_addr, tams);
+        obj_addr = complete_marking_ctx->get_next_marked_addr(obj_addr, top);
       }
     }
   }
