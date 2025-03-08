@@ -1322,8 +1322,8 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
         obj_addr += obj->size();
       } else {
         // This object is not live so we don't verify dirty cards contained therein
-        obj_addr = complete_marking_ctx != nullptr ? complete_marking_ctx->get_next_marked_addr(obj_addr, top)
-                                                   : obj_addr + (obj->size());
+        obj_addr = old_marking_complete ? complete_marking_ctx->get_next_marked_addr(obj_addr, top)
+                                        : obj_addr + (obj->size());
       }
     }
   }
