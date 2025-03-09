@@ -1281,7 +1281,7 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
                                                     HeapWord* registration_watermark, const char* message) {
   assert(old_region->is_old(), "Sanity check");
   ShenandoahVerifyRemSetClosure<Scanner> check_interesting_pointers(scanner, message);
-  const bool old_marking_complete = _heap->old_generation()->is_mark_complete();
+  const bool old_marking_complete = AFTER_FULL_GC ? false : _heap->old_generation()->is_mark_complete();
   ShenandoahMarkingContext* complete_marking_ctx = old_marking_complete ? _heap->marking_context() : nullptr;
   HeapWord* from = old_region->bottom();
   HeapWord* obj_addr = from;
