@@ -1276,18 +1276,18 @@ public:
   void do_oop(oop* p)       override { work(p); }
 };
 
-template<bool AFTER_FULL_GC, typename Scanner>
+template<typename Scanner>
 void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, ShenandoahHeapRegion* old_region,
                                                     HeapWord* registration_watermark, const char* message) {
   assert(old_region->is_old(), "Sanity check");
   ShenandoahVerifyRemSetClosure<Scanner> check_interesting_pointers(scanner, message);
-  const bool old_marking_complete = AFTER_FULL_GC ? false : _heap->old_generation()->is_mark_complete();
+  const bool old_marking_complete = _heap->old_generation()->is_mark_complete();
   ShenandoahMarkingContext* complete_marking_ctx = old_marking_complete ? _heap->marking_context() : nullptr;
   HeapWord* from = old_region->bottom();
   HeapWord* obj_addr = from;
   if (old_region->is_humongous_start()) {
     oop obj = cast_to_oop(obj_addr);
-    if (AFTER_FULL_GC || (old_marking_complete &&  complete_marking_ctx->is_marked(obj))) {
+    if (!old_marking_complete || complete_marking_ctx->is_marked(obj))) {
       // For humongous objects, the typical object is an array, so the following checks may be overkill
       // For regular objects (not object arrays), if the card holding the start of the object is dirty,
       // we do not need to verify that cards spanning interesting pointers within this object are dirty.
@@ -1307,7 +1307,7 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
     while (obj_addr < top) {
       oop obj = cast_to_oop(obj_addr);
       // ctx->is_marked() returns true if mark bit set or if obj above TAMS.
-      if (AFTER_FULL_GC || (old_marking_complete && complete_marking_ctx->is_marked(obj))) {
+      if (!old_marking_complete || complete_marking_ctx->is_marked(obj))) {
         // For regular objects (not object arrays), if the card holding the start of the object is dirty,
         // we do not need to verify that cards spanning interesting pointers within this object are dirty.
         if (!scanner->is_card_dirty(obj_addr) || obj->is_objArray()) {
