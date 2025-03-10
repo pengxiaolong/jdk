@@ -1287,7 +1287,7 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
   HeapWord* obj_addr = from;
   if (old_region->is_humongous_start()) {
     oop obj = cast_to_oop(obj_addr);
-    if (AFTER_FULL_GC || (old_marking_complete &&  complete_marking_ctx->is_marked(obj))) {
+    if (AFTER_FULL_GC || (old_marking_complete && complete_marking_ctx->is_marked(obj))) {
       // For humongous objects, the typical object is an array, so the following checks may be overkill
       // For regular objects (not object arrays), if the card holding the start of the object is dirty,
       // we do not need to verify that cards spanning interesting pointers within this object are dirty.
