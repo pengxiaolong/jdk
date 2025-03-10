@@ -1287,7 +1287,7 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
   HeapWord* obj_addr = from;
   if (old_region->is_humongous_start()) {
     oop obj = cast_to_oop(obj_addr);
-    if (!old_marking_complete || complete_marking_ctx->is_marked(obj)) {
+    if (!old_marking_complete || complete_marking_ctx->is_marked(obj))) {
       // For humongous objects, the typical object is an array, so the following checks may be overkill
       // For regular objects (not object arrays), if the card holding the start of the object is dirty,
       // we do not need to verify that cards spanning interesting pointers within this object are dirty.
@@ -1307,7 +1307,7 @@ void ShenandoahVerifier::help_verify_region_rem_set(Scanner* scanner, Shenandoah
     while (obj_addr < top) {
       oop obj = cast_to_oop(obj_addr);
       // ctx->is_marked() returns true if mark bit set or if obj above TAMS.
-      if (!old_marking_complete || complete_marking_ctx->is_marked(obj)) {
+      if (!old_marking_complete || complete_marking_ctx->is_marked(obj))) {
         // For regular objects (not object arrays), if the card holding the start of the object is dirty,
         // we do not need to verify that cards spanning interesting pointers within this object are dirty.
         if (!scanner->is_card_dirty(obj_addr) || obj->is_objArray()) {
@@ -1373,7 +1373,7 @@ void ShenandoahVerifier::verify_rem_set_after_full_gc() {
   for (size_t i = 0, n = _heap->num_regions(); i < n; ++i) {
     ShenandoahHeapRegion* r = _heap->get_region(i);
     if (r->is_old() && !r->is_cset()) {
-      help_verify_region_rem_set(&scanner, r, r->top(), "Remembered set violation at end of Full GC");
+      help_verify_region_rem_set<true>(&scanner, r, r->top(), "Remembered set violation at end of Full GC");
     }
   }
 }
