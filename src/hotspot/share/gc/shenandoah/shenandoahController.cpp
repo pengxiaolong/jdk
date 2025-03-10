@@ -81,10 +81,8 @@ void ShenandoahController::handle_alloc_failure_evac(size_t words) {
 }
 
 void ShenandoahController::notify_alloc_failure_waiters() {
-  if (Atomic::load(&_alloc_failure_waiters_count) > 0) {
-    MonitorLocker ml(&_alloc_failure_waiters_lock);
-    if (Atomic::load(&_alloc_failure_waiters_count) > 0 ) {
-      ml.notify_all();
-    }
+  MonitorLocker ml(&_alloc_failure_waiters_lock);
+  if (Atomic::load(&_alloc_failure_waiters_count) > 0 ) {
+    ml.notify_all();
   }
 }
