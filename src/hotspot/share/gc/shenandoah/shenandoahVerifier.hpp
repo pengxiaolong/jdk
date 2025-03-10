@@ -228,7 +228,7 @@ public:
   // Check that generation usages are accurate before rebuilding free set
   void verify_before_rebuilding_free_set();
 private:
-  template<typename Scanner>
+  template<bool AFTER_FULL_GC = false, typename Scanner>
   void help_verify_region_rem_set(Scanner* scanner, ShenandoahHeapRegion* r,
                                   HeapWord* update_watermark, const char* message);
 
