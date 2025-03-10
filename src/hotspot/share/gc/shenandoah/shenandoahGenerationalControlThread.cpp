@@ -278,10 +278,7 @@ void ShenandoahGenerationalControlThread::run_gc_cycle(const ShenandoahGCRequest
   }
 
   // If this was an allocation failure GC cycle, notify waiters about it
-  if (ShenandoahCollectorPolicy::is_allocation_failure(request.cause) ||
-      ShenandoahCollectorPolicy::is_allocation_failure(_heap->cancelled_cause())) {
-    notify_alloc_failure_waiters();
-  }
+  notify_alloc_failure_waiters();
 
   // Report current free set state at the end of cycle, whether
   // it is a normal completion, or the abort.
