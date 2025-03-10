@@ -88,7 +88,7 @@ void ShenandoahGenerationalControlThread::run_service() {
     // if there was no other cycle requested, cleanup and wait for the next request.
     if (!_heap->cancelled_gc()) {
       MonitorLocker ml(&_control_lock, Mutex::_no_safepoint_check_flag);
-      if (_requested_gc_cause == GCCause::_no_gc) {
+      if (!_heap->cancelled_gc() && _requested_gc_cause == GCCause::_no_gc) {
         set_gc_mode(ml, none);
         ml.wait(wait_ms);
       }
@@ -278,7 +278,8 @@ void ShenandoahGenerationalControlThread::run_gc_cycle(const ShenandoahGCRequest
   }
 
   // If this was an allocation failure GC cycle, notify waiters about it
-  if (ShenandoahCollectorPolicy::is_allocation_failure(request.cause)) {
+  if (ShenandoahCollectorPolicy::is_allocation_failure(request.cause) ||
+      ShenandoahCollectorPolicy::is_allocation_failure(_heap->cancelled_cause())) {
     notify_alloc_failure_waiters();
   }
 
@@ -723,6 +724,7 @@ void ShenandoahGenerationalControlThread::notify_control_thread(MonitorLocker& m
 
 void ShenandoahGenerationalControlThread::notify_cancellation(GCCause::Cause cause) {
   MonitorLocker ml(&_control_lock, Mutex::_no_safepoint_check_flag);
+
   notify_cancellation(ml, cause);
 }
 
