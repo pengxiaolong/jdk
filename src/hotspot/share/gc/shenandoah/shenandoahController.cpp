@@ -61,11 +61,11 @@ void ShenandoahController::handle_alloc_failure(const ShenandoahAllocRequest& re
 
   if (block) {
     MonitorLocker ml(&_alloc_failure_waiters_lock);
-    Atomic::add(&_alloc_failure_waiters_count, 1u, memory_order_relaxed);
+    _alloc_failure_waiters_count++;
     while (!should_terminate() && ShenandoahCollectorPolicy::is_allocation_failure(heap->cancelled_cause())) {
       ml.wait();
     }
-    Atomic::sub(&_alloc_failure_waiters_count, 1u, memory_order_relaxed);
+    _alloc_failure_waiters_count--;
   }
 }
 
@@ -82,7 +82,7 @@ void ShenandoahController::handle_alloc_failure_evac(size_t words) {
 
 void ShenandoahController::notify_alloc_failure_waiters() {
   MonitorLocker ml(&_alloc_failure_waiters_lock);
-  if (Atomic::load(&_alloc_failure_waiters_count) > 0 ) {
+  if (_alloc_failure_waiters_count > 0 ) {
     ml.notify_all();
   }
 }

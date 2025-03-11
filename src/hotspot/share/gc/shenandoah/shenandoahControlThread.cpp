@@ -168,7 +168,7 @@ void ShenandoahControlThread::run_service() {
       }
 
       // If this was the allocation failure GC cycle, notify waiters about it
-      if (alloc_failure_pending) {
+      if (alloc_failure_pending || _alloc_failure_waiters_count > 0) {
         notify_alloc_failure_waiters();
       }
 
