@@ -52,11 +52,12 @@ bool ShenandoahBarrierC2Support::expand(Compile* C, PhaseIterGVN& igvn) {
     PhaseIdealLoop::optimize(igvn, LoopOptsShenandoahExpand);
     if (C->failing()) return false;
 
-    C->set_major_progress();
+/*    C->set_major_progress();
     if (!C->optimize_loops(igvn, LoopOptsShenandoahPostExpand)) {
       return false;
     }
     C->clear_major_progress();
+*/
     C->process_for_post_loop_opts_igvn(igvn);
     if (C->failing()) return false;
 
