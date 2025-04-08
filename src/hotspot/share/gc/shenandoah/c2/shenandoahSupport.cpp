@@ -52,14 +52,14 @@ bool ShenandoahBarrierC2Support::expand(Compile* C, PhaseIterGVN& igvn) {
     PhaseIdealLoop::optimize(igvn, LoopOptsShenandoahExpand);
     if (C->failing()) return false;
 
-/*    C->set_major_progress();
+/*  C->set_major_progress();
     if (!C->optimize_loops(igvn, LoopOptsShenandoahPostExpand)) {
       return false;
     }
     C->clear_major_progress();
-*/
     C->process_for_post_loop_opts_igvn(igvn);
     if (C->failing()) return false;
+*/
 
     C->set_post_loop_opts_phase(); // now for real!
   }
@@ -1102,10 +1102,6 @@ void ShenandoahBarrierC2Support::pin_and_expand(PhaseIdealLoop* phase) {
 
     Node* ctrl = phase->get_ctrl(lrb);
     Node* val = lrb->in(ShenandoahLoadReferenceBarrierNode::ValueIn);
-
-    CallStaticJavaNode* unc = nullptr;
-    Node* unc_ctrl = nullptr;
-    Node* uncasted_val = val;
 
     for (DUIterator_Fast imax, i = lrb->fast_outs(imax); i < imax; i++) {
       Node* u = lrb->fast_out(i);
