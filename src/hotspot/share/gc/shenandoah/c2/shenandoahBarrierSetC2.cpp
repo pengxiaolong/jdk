@@ -818,7 +818,10 @@ Node* ShenandoahBarrierSetC2::step_over_gc_barrier(Node* c) const {
 }
 
 bool ShenandoahBarrierSetC2::expand_barriers(Compile* C, PhaseIterGVN& igvn) const {
-  return false;
+  if (ShenandoahHeap::heap()->mode()->is_generational()) {
+    return false;
+  }
+  return !ShenandoahBarrierC2Support::expand(C, igvn);
 }
 
 bool ShenandoahBarrierSetC2::optimize_loops(PhaseIdealLoop* phase, LoopOptsMode mode, VectorSet& visited, Node_Stack& nstack, Node_List& worklist) const {
