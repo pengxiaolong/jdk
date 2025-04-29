@@ -39,18 +39,25 @@ private:
   shenandoah_padding(1);
   Thread* volatile _owner;
   shenandoah_padding(2);
+  volatile uint _contenders = 0u;
+  shenandoah_padding(3);
+  volatile bool _degraded = false;
+  shenandoah_padding(4);
+  PlatformMonitor _degraded_lock;
+  shenandoah_padding(5);
+  volatile bool _locked_with_degraded_lock = false;
 
   template<bool ALLOW_BLOCK>
   void contended_lock_internal(JavaThread* java_thread);
-  static void yield_or_sleep(int &yields);
+  void yield_or_degrade(int &yields);
 
 public:
   ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
 
   void lock(bool allow_block_for_safepoint) {
     assert(Atomic::load(&_owner) != Thread::current(), "reentrant locking attempt, would deadlock");
-
-    if ((allow_block_for_safepoint && SafepointSynchronize::is_synchronizing()) ||
+    if (Atomic::load(&_degraded) ||
+        (allow_block_for_safepoint && SafepointSynchronize::is_synchronizing()) ||
         (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked)) {
       // 1. Java thread, and there is a pending safepoint. Dive into contended locking
       //    immediately without trying anything else, and block.
@@ -66,6 +73,15 @@ public:
   void unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
+    if (Atomic::load(&_locked_with_degraded_lock)) {
+      assert(Atomic::load(&_degraded), "Must have been degraded.");
+      Atomic::store(&_locked_with_degraded_lock, false);
+      OrderAccess::fence();
+      if (Atomic::load(&_contenders) == 0u) {
+        Atomic::store(&_degraded, false);
+      }
+      _degraded_lock.unlock();
+    }
     OrderAccess::fence();
     Atomic::store(&_state, unlocked);
   }
