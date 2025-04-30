@@ -230,10 +230,9 @@ void ShenandoahGenerationalControlThread::run_gc_cycle(const ShenandoahGCRequest
     _heap->soft_ref_policy()->set_should_clear_all_soft_refs(true);
   }
 
-  // GC is starting, bump the internal ID
-  update_gc_id();
-
+  // GC is starting, bump the GC ID
   GCIdMark gc_id_mark;
+  update_gc_id();
 
   _heap->reset_bytes_allocated_since_gc_start();
 

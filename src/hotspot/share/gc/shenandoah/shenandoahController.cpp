@@ -39,7 +39,7 @@ size_t ShenandoahController::reset_allocs_seen() {
 }
 
 void ShenandoahController::update_gc_id() {
-  Atomic::inc(&_gc_id);
+  Atomic::store(&_gc_id, static_cast<size_t>(GCId::current()));
 }
 
 size_t ShenandoahController::get_gc_id() {
