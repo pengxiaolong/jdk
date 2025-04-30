@@ -44,8 +44,6 @@ private:
   volatile bool _degraded = false;
   shenandoah_padding(4);
   PlatformMonitor _degraded_lock;
-  shenandoah_padding(5);
-  volatile bool _locked_with_degraded_lock = false;
 
   template<bool ALLOW_BLOCK>
   void contended_lock_internal(JavaThread* java_thread);
@@ -73,16 +71,10 @@ public:
   void unlock() {
     assert(Atomic::load(&_owner) == Thread::current(), "sanity");
     DEBUG_ONLY(Atomic::store(&_owner, (Thread*)nullptr);)
-    if (Atomic::load(&_locked_with_degraded_lock)) {
-      assert(Atomic::load(&_degraded), "Must have been degraded.");
-      Atomic::store(&_locked_with_degraded_lock, false);
-      OrderAccess::fence();
-      if (Atomic::load(&_contenders) == 0u) {
-        Atomic::store(&_degraded, false);
-      }
-      _degraded_lock.unlock();
-    }
     OrderAccess::fence();
+    if (Atomic::load(&_contenders) == 0u) {
+      Atomic::store(&_degraded, false);
+    }
     Atomic::store(&_state, unlocked);
   }
 
@@ -96,6 +88,21 @@ public:
     return false;
 #endif
   }
+};
+
+class InFlightMonitorRelease {
+private:
+  PlatformMonitor* _monitor;
+public:
+  InFlightMonitorRelease(PlatformMonitor* monitor): _monitor(monitor) {
+    assert(monitor != nullptr, "monitor must be non-null");
+  }
+  void operator()(JavaThread* current) {
+    _monitor->unlock();
+    _monitor = nullptr;
+  }
+
+  bool released() { return _monitor == nullptr; }
 };
 
 class ShenandoahLocker : public StackObj {

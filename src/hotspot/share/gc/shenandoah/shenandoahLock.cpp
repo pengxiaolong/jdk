@@ -31,14 +31,16 @@
 #include "runtime/os.inline.hpp"
 
 void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
-  Atomic::add(&_contenders, 1u);
+  Atomic::add(&_contenders, 1u, memory_order_conservative);
+  OrderAccess::fence();
   Thread* thread = Thread::current();
   if (allow_block_for_safepoint && thread->is_Java_thread()) {
     contended_lock_internal<true>(JavaThread::cast(thread));
   } else {
     contended_lock_internal<false>(nullptr);
   }
-  Atomic::sub(&_contenders, 1u);
+  OrderAccess::fence();
+  Atomic::sub(&_contenders, 1u, memory_order_conservative);
 }
 
 template<bool ALLOW_BLOCK>
@@ -49,12 +51,20 @@ void ShenandoahLock::contended_lock_internal(JavaThread *java_thread) {
   int yields = 0;
   while (true) {
     if (Atomic::load(&_degraded)) {
-      _degraded_lock.lock();
-      while (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
-        if (os::is_MP()) os::naked_yield(); else SpinPause();
+      if (ALLOW_BLOCK) {
+        InFlightMonitorRelease ifmr(&_degraded_lock);
+        {
+          ThreadBlockInVMPreprocess<InFlightMonitorRelease> tbivm(java_thread, ifmr);
+          _degraded_lock.lock();
+        }
+        if (ifmr.released()) continue;
+      } else {
+        _degraded_lock.lock();
       }
-      OrderAccess::fence();
-      Atomic::store(&_locked_with_degraded_lock, true);
+      while (Atomic::cmpxchg(&_state, unlocked, locked) != unlocked) {
+        os::naked_yield();
+      }
+      _degraded_lock.unlock();
       return;
     }
     // Apply TTAS to avoid more expensive CAS calls if the lock is still held by other thread.
