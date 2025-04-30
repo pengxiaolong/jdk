@@ -47,8 +47,7 @@ private:
 
   template<bool ALLOW_BLOCK>
   void contended_lock_internal(JavaThread* java_thread);
-  void yield_or_degrade(int &yields);
-
+  void yield_or_sleep(int &yields);
 public:
   ShenandoahLock() : _state(unlocked), _owner(nullptr) {};
 
@@ -79,6 +78,10 @@ public:
   }
 
   void contended_lock(bool allow_block_for_safepoint);
+
+  friend void degrade(ShenandoahLock* lock) {
+    Atomic::store(&lock->_degraded, true);
+  }
 
   bool owned_by_self() {
 #ifdef ASSERT

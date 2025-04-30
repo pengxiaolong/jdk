@@ -31,16 +31,14 @@
 #include "runtime/os.inline.hpp"
 
 void ShenandoahLock::contended_lock(bool allow_block_for_safepoint) {
-  Atomic::add(&_contenders, 1u, memory_order_conservative);
-  OrderAccess::fence();
+  Atomic::add(&_contenders, 1u, memory_order_relaxed);
   Thread* thread = Thread::current();
   if (allow_block_for_safepoint && thread->is_Java_thread()) {
     contended_lock_internal<true>(JavaThread::cast(thread));
   } else {
     contended_lock_internal<false>(nullptr);
   }
-  OrderAccess::fence();
-  Atomic::sub(&_contenders, 1u, memory_order_conservative);
+  Atomic::sub(&_contenders, 1u, memory_order_relaxed);
 }
 
 template<bool ALLOW_BLOCK>
@@ -92,10 +90,10 @@ void ShenandoahLock::contended_lock_internal(JavaThread *java_thread) {
             os::naked_yield();
           }
         } else {
-          yield_or_degrade(yields);
+          yield_or_sleep(yields);
         }
       } else {
-        yield_or_degrade(yields);
+        yield_or_sleep(yields);
       }
     } else {
       return;
@@ -103,14 +101,15 @@ void ShenandoahLock::contended_lock_internal(JavaThread *java_thread) {
   }
 }
 
-void ShenandoahLock::yield_or_degrade(int &yields) {
+void ShenandoahLock::yield_or_sleep(int &yields) {
   // Simple yield-sleep policy: do one 100us sleep after every N yields.
   // Tested with different values of N, and chose 3 for best performance.
   if (yields < 3) {
     os::naked_yield();
     yields++;
   } else {
-    Atomic::store(&_degraded, true);
+    os::naked_short_nanosleep(100000);
+    yields = 0;
   }
 }
 
