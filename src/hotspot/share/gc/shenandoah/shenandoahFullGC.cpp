@@ -1167,6 +1167,8 @@ ShenandoahGenerationalHeap::TransferResult ShenandoahFullGC::phase5_epilog() {
 
     heap->free_set()->finish_rebuild(young_cset_regions, old_cset_regions, num_old);
 
+    heap->free_set()->pre_allocate_directly_allocatable_regions();
+
     // Set mark incomplete because the marking bitmaps have been reset except pinned regions.
     heap->global_generation()->set_mark_incomplete();
 

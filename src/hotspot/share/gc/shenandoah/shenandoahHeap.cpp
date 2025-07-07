@@ -448,6 +448,11 @@ jint ShenandoahHeap::initialize() {
     _workers->run_task(&hcl);
   }
 
+  {
+    ShenandoahHeapLocker locker(lock());
+    _free_set->pre_allocate_directly_allocatable_regions(true);
+  }
+
   //
   // Initialize the rest of GC subsystems
   //

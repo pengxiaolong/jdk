@@ -487,6 +487,8 @@ public:
 
   void release_all_directly_allocatable_regions();
 
+  void pre_allocate_directly_allocatable_regions(bool heap_init = false);
+
   void release_directly_allocatable_region(ShenandoahHeapRegion *region);
 
   template<bool IS_TLAB>

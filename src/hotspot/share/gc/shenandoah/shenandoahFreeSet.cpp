@@ -2108,6 +2108,41 @@ void ShenandoahFreeSet::release_all_directly_allocatable_regions() {
   }
 }
 
+class PreAllocateDirectlyAllocatableRegionClosure : public ShenandoahHeapRegionBreakableIterClosure {
+  ShenandoahHeapRegion** _directly_allocatable_regions;
+  uint current_idx = 0;
+
+public:
+  PreAllocateDirectlyAllocatableRegionClosure(ShenandoahHeapRegion** directly_allocatable_regions): _directly_allocatable_regions(directly_allocatable_regions) {}
+
+  bool heap_region_do(ShenandoahHeapRegion *r) override {
+    // There should be no region reserved for direct allocation when pre-allocating.
+    assert(!r->reserved_for_direct_allocation(), "Must not");
+    assert(current_idx < ShenandoahDirectlyAllocatableRegionCount, "Must be");
+    if (!r->is_empty()) return false;
+
+    r->try_recycle_under_lock();
+    r->reserve_for_direct_allocation();
+    r->set_affiliation(YOUNG_GENERATION);
+    r->make_regular_allocation(YOUNG_GENERATION);
+    ShenandoahHeap::heap()->generation_for(r->affiliation())->increment_affiliated_region_count();
+    OrderAccess::fence();
+    Atomic::release_store(_directly_allocatable_regions + current_idx, r);
+
+    return ++current_idx >= ShenandoahDirectlyAllocatableRegionCount;
+  }
+};
+
+void ShenandoahFreeSet::pre_allocate_directly_allocatable_regions(bool heap_init) {
+  if (!heap_init) {
+    assert_at_safepoint();
+  }
+  shenandoah_assert_heaplocked();
+
+  PreAllocateDirectlyAllocatableRegionClosure cl(_directly_allocatable_regions);
+  iterate_regions_for_alloc<true, false>(&cl, true);
+}
+
 template<bool IS_TLAB>
 HeapWord* ShenandoahFreeSet::par_allocate_single_for_mutator(ShenandoahAllocRequest &req, bool &in_new_region) {
   shenandoah_assert_not_heaplocked();
