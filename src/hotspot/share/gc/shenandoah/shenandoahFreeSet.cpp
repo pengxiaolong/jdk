@@ -2119,17 +2119,24 @@ public:
     // There should be no region reserved for direct allocation when pre-allocating.
     assert(!r->reserved_for_direct_allocation(), "Must not");
     assert(current_idx < ShenandoahDirectlyAllocatableRegionCount, "Must be");
-    if (!r->is_empty()) return false;
-
-    r->try_recycle_under_lock();
-    r->reserve_for_direct_allocation();
-    r->set_affiliation(YOUNG_GENERATION);
-    r->make_regular_allocation(YOUNG_GENERATION);
-    ShenandoahHeap::heap()->generation_for(r->affiliation())->increment_affiliated_region_count();
-    OrderAccess::fence();
-    Atomic::release_store(_directly_allocatable_regions + current_idx, r);
-
-    return ++current_idx >= ShenandoahDirectlyAllocatableRegionCount;
+    if (r->is_empty()) {
+      r->try_recycle_under_lock();
+      r->reserve_for_direct_allocation();
+      r->set_affiliation(YOUNG_GENERATION);
+      r->make_regular_allocation(YOUNG_GENERATION);
+      ShenandoahHeap::heap()->generation_for(r->affiliation())->increment_affiliated_region_count();
+      OrderAccess::fence();
+      Atomic::release_store(_directly_allocatable_regions + current_idx, r);
+      current_idx++;
+    } else if (r->affiliation() == YOUNG_GENERATION &&
+               (r->is_regular() || r->is_regular_pinned()) &&
+               r->free() >= PLAB::min_size()) {
+      r->reserve_for_direct_allocation();
+      OrderAccess::fence();
+      Atomic::release_store(_directly_allocatable_regions + current_idx, r);
+      current_idx++;
+    }
+    return current_idx >= ShenandoahDirectlyAllocatableRegionCount;
   }
 };
 
