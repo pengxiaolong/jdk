@@ -250,7 +250,7 @@ private:
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
   // Frequently updated fields
-  HeapWord* volatile _top;
+  uintptr_t volatile _top;
 
   size_t volatile _tlab_allocs;
   size_t volatile _gclab_allocs;
@@ -390,7 +390,7 @@ public:
 
   inline HeapWord* allocate_lab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size);
 
-  inline bool try_allocate(HeapWord* const obj, size_t const size);
+  inline bool try_allocate_atomic(HeapWord* &obj, size_t const size);
 
   inline void clear_live_data();
   void set_live_data(size_t s);
@@ -452,10 +452,10 @@ public:
   ShenandoahHeapRegion* humongous_start_region() const;
 
   HeapWord* top() const {
-    return AtomicAccess::load(&_top);
+    return reinterpret_cast<HeapWord*>(AtomicAccess::load(&_top));
   }
   void set_top(HeapWord* v) {
-    AtomicAccess::store(&_top, v);
+    AtomicAccess::store(&_top, (uintptr_t) v);
   }
 
   HeapWord* new_top() const     { return _new_top; }

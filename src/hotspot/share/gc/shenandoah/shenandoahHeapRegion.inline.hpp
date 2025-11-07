@@ -151,21 +151,15 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
   assert(this->affiliation() == req.affiliation(), "Region affiliation should already be established");
   assert(this->is_regular() || this->is_regular_pinned(), "must be a regular region");
 
-  for (;;) {
-    if (!reserved_for_direct_allocation()) {
-      return nullptr;
-    }
-    HeapWord* obj = top();
-    if (pointer_delta(end(), obj) >= size) {
-      if (try_allocate(obj, size)) {
-        reset_age();
-        adjust_alloc_metadata(req.type(), size);
-        return obj;
-      }
-    } else {
-      return nullptr;
+  if (reserved_for_direct_allocation() && pointer_delta(end(), top()) >= size) {
+    HeapWord* obj = nullptr;
+    if (try_allocate(obj, size)) {
+      reset_age();
+      adjust_alloc_metadata(req.type(), size);
+      return obj;
     }
   }
+  return nullptr;
 }
 
 HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size) {
@@ -173,37 +167,43 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
   assert(req.is_lab_alloc(), "Only lab alloc");
   assert(this->affiliation() == req.affiliation(), "Region affiliation should already be established");
   assert(this->is_regular() || this->is_regular_pinned(), "must be a regular region");
+  size_t free_words = align_down(byte_size(top(), end()) >> LogHeapWordSize, MinObjAlignment);
   size_t adjusted_size = req.size();
-  for (;;) {
-    if (!reserved_for_direct_allocation()) {
-      return nullptr;
-    }
-    HeapWord* obj = top();
-    size_t free_words = align_down(byte_size(obj, end()) >> LogHeapWordSize, MinObjAlignment);
+
+  while (free_words >= req.min_size()) {
     if (adjusted_size > free_words) {
       adjusted_size = free_words;
     }
-    if (adjusted_size >= req.min_size()) {
-      if (try_allocate(obj, adjusted_size)) {
-        reset_age();
-        actual_size = adjusted_size;
-        adjust_alloc_metadata(req.type(), adjusted_size);
-        return obj;
-      }
-    } else {
-      log_trace(gc, free)("Failed to shrink TLAB or GCLAB request (%zu) in region %zu to %zu"
-                          " because min_size() is %zu", req.size(), index(), adjusted_size, req.min_size());
-      return nullptr;
+    HeapWord* obj = nullptr;
+    if (try_allocate(obj, adjusted_size)) {
+      reset_age();
+      actual_size = adjusted_size;
+      adjust_alloc_metadata(req.type(), adjusted_size);
+      return obj;
     }
+    free_words = align_down(byte_size(top(), end()) >> LogHeapWordSize, MinObjAlignment);
   }
+
+  log_trace(gc, free)("Failed to shrink TLAB or GCLAB request (%zu) in region %zu to %zu"
+                    " because min_size() is %zu", req.size(), index(), free_words, req.min_size());
+  return nullptr;
 }
 
-bool ShenandoahHeapRegion::try_allocate(HeapWord* const obj, size_t const size) {
-  HeapWord* new_top = obj + size;
-  if (AtomicAccess::cmpxchg(&_top, obj, new_top) == obj) {
+bool ShenandoahHeapRegion::try_allocate_atomic(HeapWord* &obj, size_t const size) {
+  // Instead of using cmpxchg, simply use add-and-fetch here, the allocation succeed
+  // if the new top doesn't pass the end of the region; otherwise the alloc fail.
+  // When the alloc didn't succeed, the first witness is responsible to restore the top to a valid value.
+  HeapWord* new_top = reinterpret_cast<HeapWord*>(AtomicAccess::add(&_top, size * HeapWordSize));
+  HeapWord* top_before_add = new_top - size;
+  if (new_top <= end()) {
     assert(is_object_aligned(new_top), "new top breaks alignment: " PTR_FORMAT, p2i(new_top));
     assert(is_object_aligned(obj),     "obj is not aligned: "       PTR_FORMAT, p2i(obj));
+    obj = top_before_add;
     return true;
+  }
+  if (top_before_add <= end()) {
+    // Restore top
+    set_top(top_before_add);
   }
   return false;
 }
@@ -320,7 +320,7 @@ inline void ShenandoahHeapRegion::save_top_before_promote() {
 }
 
 inline void ShenandoahHeapRegion::restore_top_before_promote() {
-  _top = _top_before_promoted;
+  _top = (uintptr_t) _top_before_promoted;
   _top_before_promoted = nullptr;
  }
 
