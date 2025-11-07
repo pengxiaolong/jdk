@@ -38,7 +38,7 @@ MutableSpace::MutableSpace(size_t page_size) :
   _last_setup_region(),
   _page_size(page_size),
   _bottom(nullptr),
-  _top(nullptr),
+  _top(0),
   _end(nullptr) {}
 
 void MutableSpace::numa_setup_pages(MemRegion mr, bool clear_space) {
@@ -140,7 +140,7 @@ void MutableSpace::clear(bool mangle_space) {
 #ifndef PRODUCT
 
 void MutableSpace::mangle_unused_area() {
-  mangle_region(MemRegion(_top, _end));
+  mangle_region(MemRegion(reinterpret_cast<HeapWord*>(_top), _end));
 }
 
 void MutableSpace::mangle_region(MemRegion mr) {
@@ -149,35 +149,33 @@ void MutableSpace::mangle_region(MemRegion mr) {
 
 #endif
 
-HeapWord* MutableSpace::cas_allocate(size_t size) {
-  do {
-    // Read top before end, else the range check may pass when it shouldn't.
-    // If end is read first, other threads may advance end and top such that
-    // current top > old end and current top + size > current end.  Then
-    // pointer_delta underflows, allowing installation of top > current end.
-    HeapWord* obj = AtomicAccess::load_acquire(top_addr());
-    if (pointer_delta(end(), obj) >= size) {
-      HeapWord* new_top = obj + size;
-      HeapWord* result = AtomicAccess::cmpxchg(top_addr(), obj, new_top);
-      // result can be one of two:
-      //  the old top value: the exchange succeeded
-      //  otherwise: the new value of the top is returned.
-      if (result != obj) {
-        continue; // another thread beat us to the allocation, try again
-      }
+HeapWord* MutableSpace::atomic_allocate(size_t size) {
+  // Read top before end, else the range check may pass when it shouldn't.
+  // If end is read first, other threads may advance end and top such that
+  // current top > old end and current top + size > current end.  Then
+  // pointer_delta underflows, allowing installation of top > current end.
+  HeapWord* top = reinterpret_cast<HeapWord*>(AtomicAccess::load_acquire(&_top));
+  if (end() > top && pointer_delta(end(), top) >= size) {
+    HeapWord* new_top = reinterpret_cast<HeapWord*>(AtomicAccess::add(&_top, size * HeapWordSize));
+    HeapWord* obj = new_top - size;
+    if (new_top <= end()) {
       assert(is_object_aligned(obj) && is_object_aligned(new_top),
-             "checking alignment");
+       "checking alignment");
       return obj;
-    } else {
-      return nullptr;
     }
-  } while (true);
+    if (obj <= end()) {
+      // Restore top
+      set_top(obj);
+    }
+  }
+
+  return nullptr;
 }
 
 // Try to deallocate previous allocation. Returns true upon success.
-bool MutableSpace::cas_deallocate(HeapWord *obj, size_t size) {
-  HeapWord* expected_top = obj + size;
-  return AtomicAccess::cmpxchg(top_addr(), expected_top, obj) == expected_top;
+bool MutableSpace::atomic_deallocate(HeapWord *obj, size_t size) {
+  uintptr_t expected_top = (uintptr_t) (obj + size);
+  return AtomicAccess::cmpxchg(top_addr(), expected_top, (uintptr_t) obj) == expected_top;
 }
 
 // Only used by oldgen allocation.

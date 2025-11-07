@@ -171,7 +171,7 @@ public:
   virtual size_t unsafe_max_tlab_alloc() const;
 
   // Allocation (return null if full)
-  virtual HeapWord* cas_allocate(size_t word_size);
+  virtual HeapWord* atomic_allocate(size_t word_size);
 
   // Debugging
   virtual void print_on(outputStream* st, const char* prefix) const;

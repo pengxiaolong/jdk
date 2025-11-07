@@ -126,7 +126,7 @@ HeapWord* PSOldGen::expand_and_allocate(size_t word_size) {
 
   // Reuse the CAS API even though this is VM thread in safepoint. This method
   // is not invoked repeatedly, so the CAS overhead should be negligible.
-  return cas_allocate_noexpand(word_size);
+  return atomic_allocate_noexpand(word_size);
 }
 
 size_t PSOldGen::num_iterable_blocks() const {

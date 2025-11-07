@@ -470,14 +470,14 @@ MutableNUMASpace::LGRPSpace *MutableNUMASpace::lgrp_space_for_current_thread() c
   return lgrp_spaces()->at(lgrp_spaces_index);
 }
 
-HeapWord* MutableNUMASpace::cas_allocate(size_t size) {
+HeapWord* MutableNUMASpace::atomic_allocate(size_t size) {
   LGRPSpace *ls = lgrp_space_for_current_thread();
   MutableSpace *s = ls->space();
-  HeapWord *p = s->cas_allocate(size);
+  HeapWord *p = s->atomic_allocate(size);
   if (p != nullptr) {
     size_t remainder = pointer_delta(s->end(), p + size);
     if (remainder < CollectedHeap::min_fill_size() && remainder > 0) {
-      if (s->cas_deallocate(p, size)) {
+      if (s->atomic_deallocate(p, size)) {
         // We were the last to allocate and created a fragment less than
         // a minimal object.
         p = nullptr;
@@ -487,8 +487,8 @@ HeapWord* MutableNUMASpace::cas_allocate(size_t size) {
     }
   }
   if (p != nullptr) {
-    HeapWord* cur_top, *cur_chunk_top = p + size;
-    while ((cur_top = top()) < cur_chunk_top) { // Keep _top updated.
+    uintptr_t cur_top, cur_chunk_top = (uintptr_t)(p + size);
+    while ((cur_top = (uintptr_t)top()) < cur_chunk_top) { // Keep _top updated.
       if (AtomicAccess::cmpxchg(top_addr(), cur_top, cur_chunk_top) == cur_top) {
         break;
       }

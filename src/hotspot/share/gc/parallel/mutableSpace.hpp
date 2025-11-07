@@ -53,7 +53,7 @@ class MutableSpace: public CHeapObj<mtGC> {
   MemRegion _last_setup_region;
   size_t _page_size;
   HeapWord* _bottom;
-  HeapWord* volatile _top;
+  uintptr_t volatile _top;
   HeapWord* _end;
 
   void numa_setup_pages(MemRegion mr, bool clear_space);
@@ -70,14 +70,14 @@ public:
 
   // Accessors
   HeapWord* bottom() const                 { return _bottom; }
-  HeapWord* top() const                    { return _top;    }
+  HeapWord* top() const                    { return reinterpret_cast<HeapWord*>(AtomicAccess::load(&_top));    }
   HeapWord* end() const                    { return _end; }
 
   void set_bottom(HeapWord* value)         { _bottom = value; }
-  virtual void set_top(HeapWord* value)    { _top = value;   }
+  virtual void set_top(HeapWord* value)    { AtomicAccess::store(&_top, (uintptr_t) value);   }
   void set_end(HeapWord* value)            { _end = value; }
 
-  HeapWord* volatile* top_addr()           { return &_top; }
+  volatile uintptr_t* top_addr()           { return &_top; }
   HeapWord** end_addr()                    { return &_end; }
 
   MemRegion region() const { return MemRegion(bottom(), end()); }
@@ -124,9 +124,9 @@ public:
   virtual size_t unsafe_max_tlab_alloc() const { return free_in_bytes();                }
 
   // Allocation (return null if full)
-  virtual HeapWord* cas_allocate(size_t word_size);
+  virtual HeapWord* atomic_allocate(size_t word_size);
   // Optional deallocation. Used in NUMA-allocator.
-  bool cas_deallocate(HeapWord *obj, size_t size);
+  bool atomic_deallocate(HeapWord *obj, size_t size);
   // Return true if this space needs to be expanded in order to satisfy an
   // allocation request of the indicated size.  Concurrent allocations and
   // resizes may change the result of a later call.  Used by oldgen allocator.

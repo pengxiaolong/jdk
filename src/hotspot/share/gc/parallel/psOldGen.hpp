@@ -112,15 +112,15 @@ class PSOldGen : public CHeapObj<mtGC> {
   HeapWord* allocate(size_t word_size) {
     HeapWord* res;
     do {
-      res = cas_allocate_noexpand(word_size);
+      res = atomic_allocate_noexpand(word_size);
       // Retry failed allocation if expand succeeds.
     } while ((res == nullptr) && expand_for_allocate(word_size));
     return res;
   }
 
   // Invoked by mutators before attempting GC.
-  HeapWord* cas_allocate_noexpand(size_t word_size) {
-    HeapWord* res = object_space()->cas_allocate(word_size);
+  HeapWord* atomic_allocate_noexpand(size_t word_size) {
+    HeapWord* res = object_space()->atomic_allocate(word_size);
     if (res != nullptr) {
       _start_array->update_for_block(res, res + word_size);
     }

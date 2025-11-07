@@ -48,7 +48,7 @@
                                                                                                                                      \
   nonstatic_field(MutableSpace,                _bottom,                                       HeapWord*)                             \
   nonstatic_field(MutableSpace,                _end,                                          HeapWord*)                             \
-  volatile_nonstatic_field(MutableSpace,       _top,                                          HeapWord*)                             \
+  volatile_nonstatic_field(MutableSpace,       _top,                                          uintptr_t)                             \
                                                                                                                                      \
   nonstatic_field(PSYoungGen,                  _reserved,                                     MemRegion)                             \
   nonstatic_field(PSYoungGen,                  _virtual_space,                                PSVirtualSpace*)                       \

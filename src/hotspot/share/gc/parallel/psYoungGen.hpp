@@ -128,7 +128,7 @@ class PSYoungGen : public CHeapObj<mtGC> {
 
   // Allocation
   HeapWord* allocate(size_t word_size) {
-    HeapWord* result = eden_space()->cas_allocate(word_size);
+    HeapWord* result = eden_space()->atomic_allocate(word_size);
     return result;
   }
 

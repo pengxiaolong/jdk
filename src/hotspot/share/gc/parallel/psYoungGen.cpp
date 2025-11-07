@@ -318,7 +318,7 @@ HeapWord* PSYoungGen::expand_and_allocate(size_t word_size) {
     }
   }
 
-  HeapWord* result = eden_space()->cas_allocate(word_size);
+  HeapWord* result = eden_space()->atomic_allocate(word_size);
   assert(result || UseNUMA, "inv");
   return result;
 }

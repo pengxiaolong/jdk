@@ -281,7 +281,7 @@ HeapWord* ParallelScavengeHeap::mem_allocate_cas_noexpand(size_t size, bool is_t
   // Try allocating from the old gen for non-TLAB and large allocations.
   if (!is_tlab) {
     if (!should_alloc_in_eden(size)) {
-      result = old_gen()->cas_allocate_noexpand(size);
+      result = old_gen()->atomic_allocate_noexpand(size);
       if (result != nullptr) {
         return result;
       }
@@ -290,12 +290,12 @@ HeapWord* ParallelScavengeHeap::mem_allocate_cas_noexpand(size_t size, bool is_t
 
   // In extreme cases, try allocating in from space also.
   if (_is_heap_almost_full) {
-    result = young_gen()->from_space()->cas_allocate(size);
+    result = young_gen()->from_space()->atomic_allocate(size);
     if (result != nullptr) {
       return result;
     }
     if (!is_tlab) {
-      result = old_gen()->cas_allocate_noexpand(size);
+      result = old_gen()->atomic_allocate_noexpand(size);
       if (result != nullptr) {
         return result;
       }
