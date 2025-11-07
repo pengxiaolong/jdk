@@ -153,7 +153,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
 
   if (reserved_for_direct_allocation() && pointer_delta(end(), top()) >= size) {
     HeapWord* obj = nullptr;
-    if (try_allocate(obj, size)) {
+    if (try_allocate_atomic(obj, size)) {
       reset_age();
       adjust_alloc_metadata(req.type(), size);
       return obj;
@@ -175,7 +175,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
       adjusted_size = free_words;
     }
     HeapWord* obj = nullptr;
-    if (try_allocate(obj, adjusted_size)) {
+    if (try_allocate_atomic(obj, adjusted_size)) {
       reset_age();
       actual_size = adjusted_size;
       adjust_alloc_metadata(req.type(), adjusted_size);
