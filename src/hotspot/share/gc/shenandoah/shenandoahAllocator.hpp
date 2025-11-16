@@ -37,19 +37,11 @@ class ShenandoahAllocRequest;
 class ShenandoahAllocator : public CHeapObj<mtGC> {
 protected:
 
-  struct ShenandoahAllocRegion {
-    ShenandoahHeapRegion* volatile _address;
-  };
-
-  PaddedEnd<ShenandoahAllocRegion>* _alloc_regions;
-  uint const                        _alloc_region_count;
+  ShenandoahHeapRegion* volatile    _alloc_region;
+  ShenandoahHeapRegion* volatile    _retained_alloc_region;
   ShenandoahFreeSet*                _free_set;
   ShenandoahFreeSetPartitionId      _alloc_partition_id;
-  bool                              _yield_to_safepoint = false;
-  volatile int                      _alloc_regions_refresh_count = 0;
-
-  // start index of the shared alloc regions where the allocation will start from.
-  virtual uint alloc_start_index() { return 0u; }
+  bool                              _yield_to_safepoint;
 
   // Attempt to allocate
   // It will try to allocate in alloc regions first, if fails it will try to get new alloc regions from free-set
@@ -58,19 +50,19 @@ protected:
 
   // Attempt to allocate in shared alloc regions, the allocation attempt is done with atomic operation w/o
   // holding heap lock.
-  HeapWord* attempt_allocation_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint const alloc_start_index);
+  HeapWord* attempt_allocation_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region);
 
   // Allocate in a region with atomic.
   HeapWord* atomic_allocate_in(ShenandoahHeapRegion* region, ShenandoahAllocRequest &req, bool &in_new_region);
 
   // Refill new alloc regions, allocate the object in the new alloc region.
-  HeapWord* new_alloc_regions_and_allocate(ShenandoahAllocRequest* req, bool* in_new_region, uint &new_alloc_start_index);
+  HeapWord* new_alloc_regions_and_allocate(ShenandoahAllocRequest* req, bool* in_new_region);
 #ifdef ASSERT
   virtual void verify(ShenandoahAllocRequest& req) { }
 #endif
 
 public:
-  ShenandoahAllocator(uint alloc_region_count, ShenandoahFreeSet* free_set, ShenandoahFreeSetPartitionId alloc_partition_id);
+  ShenandoahAllocator(ShenandoahFreeSet* free_set, ShenandoahFreeSetPartitionId alloc_partition_id, bool yield_to_safepoint);
   virtual ~ShenandoahAllocator() { }
 
   // Handle the allocation request.
@@ -83,8 +75,6 @@ public:
  * Allocator impl for mutator
  */
 class ShenandoahMutatorAllocator : public ShenandoahAllocator {
-  static THREAD_LOCAL uint _alloc_start_index;
-  uint alloc_start_index() override;
 #ifdef ASSERT
   void verify(ShenandoahAllocRequest& req) override;
 #endif // ASSERT
@@ -94,7 +84,6 @@ public:
 };
 
 class ShenandoahCollectorAllocator : public ShenandoahAllocator {
-  uint alloc_start_index() override;
 #ifdef ASSERT
   void verify(ShenandoahAllocRequest& req) override;
 #endif // ASSERT
@@ -104,7 +93,6 @@ public:
 
 // TODO ShenandoahOldCollectorAllocator doesn't handle plab alloc property yet because of
 class ShenandoahOldCollectorAllocator : public ShenandoahAllocator {
-  uint alloc_start_index() override;
 #ifdef ASSERT
   void verify(ShenandoahAllocRequest& req) override;
 #endif // ASSERT

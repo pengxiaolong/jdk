@@ -286,7 +286,7 @@ public:
 
   inline bool is_empty(ShenandoahFreeSetPartitionId which_partition) const;
 
-  inline void increase_region_counts(ShenandoahFreeSetPartitionId which_partition, size_t regions);
+  void increase_region_counts(ShenandoahFreeSetPartitionId which_partition, size_t regions);
   inline void decrease_region_counts(ShenandoahFreeSetPartitionId which_partition, size_t regions);
   inline size_t get_region_counts(ShenandoahFreeSetPartitionId which_partition) {
     assert (which_partition < NumPartitions, "selected free set must be valid");
@@ -503,12 +503,6 @@ private:
     }
   }
 
-  template<bool UsedByMutatorChanged, bool UsedByCollectorChanged, bool UsedByOldCollectorChanged>
-  inline void recompute_total_used() {
-    recompute_total_young_used<UsedByMutatorChanged, UsedByCollectorChanged>();
-    recompute_total_old_used<UsedByOldCollectorChanged>();
-    recompute_total_global_used<UsedByMutatorChanged, UsedByCollectorChanged, UsedByOldCollectorChanged>();
-  }
 
   size_t _young_affiliated_regions;
   size_t _old_affiliated_regions;
@@ -522,50 +516,6 @@ private:
 
   size_t _mutator_bytes_allocated_since_gc_start;
 
-  // If only affiliation changes are promote-in-place and generation sizes have not changed,
-  //    we have AffiliatedChangesAreGlobalNeutral
-  // If only affiliation changes are non-empty regions moved from Mutator to Collector and young size has not changed,
-  //    we have AffiliatedChangesAreYoungNeutral
-  // If only unaffiliated changes are empty regions from Mutator to/from Collector, we have UnaffiliatedChangesAreYoungNeutral
-  template<bool MutatorEmptiesChanged, bool CollectorEmptiesChanged, bool OldCollectorEmptiesChanged,
-           bool MutatorSizeChanged, bool CollectorSizeChanged, bool OldCollectorSizeChanged,
-           bool AffiliatedChangesAreYoungNeutral, bool AffiliatedChangesAreGlobalNeutral,
-           bool UnaffiliatedChangesAreYoungNeutral>
-  inline void recompute_total_affiliated() {
-    shenandoah_assert_heaplocked();
-    size_t region_size_bytes = ShenandoahHeapRegion::region_size_bytes();
-    if (!UnaffiliatedChangesAreYoungNeutral && (MutatorEmptiesChanged || CollectorEmptiesChanged)) {
-      _young_unaffiliated_regions = (_partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::Mutator) +
-                                     _partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::Collector));
-    }
-    if (!AffiliatedChangesAreYoungNeutral &&
-        (MutatorSizeChanged || CollectorSizeChanged || MutatorEmptiesChanged || CollectorEmptiesChanged)) {
-      _young_affiliated_regions = ((_partitions.get_capacity(ShenandoahFreeSetPartitionId::Mutator) +
-                                    _partitions.get_capacity(ShenandoahFreeSetPartitionId::Collector)) / region_size_bytes -
-                                   _young_unaffiliated_regions);
-    }
-    if (OldCollectorSizeChanged || OldCollectorEmptiesChanged) {
-      _old_affiliated_regions = (_partitions.get_capacity(ShenandoahFreeSetPartitionId::OldCollector) / region_size_bytes -
-                                 _partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::OldCollector));
-    }
-    if (!AffiliatedChangesAreGlobalNeutral &&
-        (MutatorEmptiesChanged || CollectorEmptiesChanged || OldCollectorEmptiesChanged)) {
-      _global_unaffiliated_regions =
-        _young_unaffiliated_regions + _partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::OldCollector);
-    }
-    if (!AffiliatedChangesAreGlobalNeutral &&
-        (MutatorSizeChanged || CollectorSizeChanged || MutatorEmptiesChanged || CollectorEmptiesChanged ||
-         OldCollectorSizeChanged || OldCollectorEmptiesChanged)) {
-      _global_affiliated_regions = _young_affiliated_regions + _old_affiliated_regions;
-    }
-#ifdef ASSERT
-    if (ShenandoahHeap::heap()->mode()->is_generational()) {
-      assert(_young_affiliated_regions * ShenandoahHeapRegion::region_size_bytes() >= _total_young_used, "sanity");
-      assert(_old_affiliated_regions * ShenandoahHeapRegion::region_size_bytes() >= _total_old_used, "sanity");
-    }
-    assert(_global_affiliated_regions * ShenandoahHeapRegion::region_size_bytes() >= _total_global_used, "sanity");
-#endif
-  }
 
   // Increases used memory for the partition if the allocation is successful. `in_new_region` will be set
   // if this is the first allocation in the region.
@@ -646,6 +596,58 @@ public:
   static const size_t FreeSetUnderConstruction = ShenandoahRegionPartitions::FreeSetUnderConstruction;
 
   ShenandoahFreeSet(ShenandoahHeap* heap, size_t max_regions);
+
+  template<bool UsedByMutatorChanged, bool UsedByCollectorChanged, bool UsedByOldCollectorChanged>
+  inline void recompute_total_used() {
+    recompute_total_young_used<UsedByMutatorChanged, UsedByCollectorChanged>();
+    recompute_total_old_used<UsedByOldCollectorChanged>();
+    recompute_total_global_used<UsedByMutatorChanged, UsedByCollectorChanged, UsedByOldCollectorChanged>();
+  }
+
+  // If only affiliation changes are promote-in-place and generation sizes have not changed,
+  //    we have AffiliatedChangesAreGlobalNeutral
+  // If only affiliation changes are non-empty regions moved from Mutator to Collector and young size has not changed,
+  //    we have AffiliatedChangesAreYoungNeutral
+  // If only unaffiliated changes are empty regions from Mutator to/from Collector, we have UnaffiliatedChangesAreYoungNeutral
+  template<bool MutatorEmptiesChanged, bool CollectorEmptiesChanged, bool OldCollectorEmptiesChanged,
+           bool MutatorSizeChanged, bool CollectorSizeChanged, bool OldCollectorSizeChanged,
+           bool AffiliatedChangesAreYoungNeutral, bool AffiliatedChangesAreGlobalNeutral,
+           bool UnaffiliatedChangesAreYoungNeutral>
+  inline void recompute_total_affiliated() {
+    shenandoah_assert_heaplocked();
+    size_t region_size_bytes = ShenandoahHeapRegion::region_size_bytes();
+    if (!UnaffiliatedChangesAreYoungNeutral && (MutatorEmptiesChanged || CollectorEmptiesChanged)) {
+      _young_unaffiliated_regions = (_partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::Mutator) +
+                                     _partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::Collector));
+    }
+    if (!AffiliatedChangesAreYoungNeutral &&
+        (MutatorSizeChanged || CollectorSizeChanged || MutatorEmptiesChanged || CollectorEmptiesChanged)) {
+      _young_affiliated_regions = ((_partitions.get_capacity(ShenandoahFreeSetPartitionId::Mutator) +
+                                    _partitions.get_capacity(ShenandoahFreeSetPartitionId::Collector)) / region_size_bytes -
+                                   _young_unaffiliated_regions);
+    }
+    if (OldCollectorSizeChanged || OldCollectorEmptiesChanged) {
+      _old_affiliated_regions = (_partitions.get_capacity(ShenandoahFreeSetPartitionId::OldCollector) / region_size_bytes -
+                                 _partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::OldCollector));
+    }
+    if (!AffiliatedChangesAreGlobalNeutral &&
+        (MutatorEmptiesChanged || CollectorEmptiesChanged || OldCollectorEmptiesChanged)) {
+      _global_unaffiliated_regions =
+        _young_unaffiliated_regions + _partitions.get_empty_region_counts(ShenandoahFreeSetPartitionId::OldCollector);
+    }
+    if (!AffiliatedChangesAreGlobalNeutral &&
+        (MutatorSizeChanged || CollectorSizeChanged || MutatorEmptiesChanged || CollectorEmptiesChanged ||
+         OldCollectorSizeChanged || OldCollectorEmptiesChanged)) {
+      _global_affiliated_regions = _young_affiliated_regions + _old_affiliated_regions;
+    }
+#ifdef ASSERT
+    if (ShenandoahHeap::heap()->mode()->is_generational()) {
+      assert(_young_affiliated_regions * ShenandoahHeapRegion::region_size_bytes() >= _total_young_used, "sanity");
+      assert(_old_affiliated_regions * ShenandoahHeapRegion::region_size_bytes() >= _total_old_used, "sanity");
+    }
+    assert(_global_affiliated_regions * ShenandoahHeapRegion::region_size_bytes() >= _total_global_used, "sanity");
+#endif
+  }
 
   inline size_t max_regions() const { return _partitions.max(); }
   ShenandoahFreeSetPartitionId membership(size_t index) const { return _partitions.membership(index); }
@@ -821,10 +823,10 @@ public:
   HeapWord* allocate_contiguous_cds(ShenandoahAllocRequest &req);
   // Reserve number of alloc regions from given partition of FreeSets,
   // it ensures at least one region with sufficient capacity will be reserved.
-  HeapWord* reserve_alloc_regions_and_allocate(ShenandoahFreeSetPartitionId partition, int num_regions, GrowableArray<ShenandoahHeapRegion*> &alloc_regions, ShenandoahAllocRequest* req, bool* in_new_region);
+  ShenandoahHeapRegion* reserve_new_alloc_region(ShenandoahFreeSetPartitionId partition, size_t min_free_bytes);
 
   template<typename Iter>
-  HeapWord* reserve_alloc_regions_and_allocate_internal(Iter iterator, ShenandoahFreeSetPartitionId partition, int num_regions, GrowableArray<ShenandoahHeapRegion*> &alloc_regions, ShenandoahAllocRequest* req, bool* in_new_region);
+  ShenandoahHeapRegion* reserve_new_alloc_region_internal(Iter iterator, ShenandoahFreeSetPartitionId partition, size_t min_free_bytes);
   /*
    * Internal fragmentation metric: describes how fragmented the heap regions are.
    *
