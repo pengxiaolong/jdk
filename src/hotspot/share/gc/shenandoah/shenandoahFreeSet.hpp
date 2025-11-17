@@ -293,7 +293,7 @@ public:
     return _region_counts[int(which_partition)];
   }
 
-  inline void increase_empty_region_counts(ShenandoahFreeSetPartitionId which_partition, size_t regions);
+  void increase_empty_region_counts(ShenandoahFreeSetPartitionId which_partition, size_t regions);
   inline void decrease_empty_region_counts(ShenandoahFreeSetPartitionId which_partition, size_t regions);
   inline size_t get_empty_region_counts(ShenandoahFreeSetPartitionId which_partition) {
     assert (which_partition < NumPartitions, "selected free set must be valid");

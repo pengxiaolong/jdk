@@ -3332,11 +3332,47 @@ ShenandoahHeapRegion* ShenandoahFreeSet::reserve_new_alloc_region(ShenandoahFree
     region = reserve_new_alloc_region_internal(iterator, partition, min_free_bytes);
   }
 
-  if (partition != ShenandoahFreeSetPartitionId::Mutator && region == nullptr) {
-    //TODO here it may need to transfer regions from Mutator partition into Collector/OldCollector partition to satisfy the request.
+  if (region != nullptr) {
+    return region;
   }
 
-  return region;
+  if (partition != ShenandoahFreeSetPartitionId::Mutator) {
+    ShenandoahRightLeftIterator iterator(&_partitions, ShenandoahFreeSetPartitionId::Mutator, true /*Use empty*/);
+    for (idx_t idx = iterator.current(); iterator.has_next(); idx = iterator.next()) {
+      ShenandoahHeapRegion* r = _heap->get_region(idx);
+      if (can_allocate_from(r)) {
+        if (partition == ShenandoahFreeSetPartitionId::OldCollector) {
+          if (!flip_to_old_gc(r)) {
+            continue;
+          }
+        } else {
+          flip_to_gc(r);
+        }
+        region = r;
+        assert(partitions()->membership(idx) == partition, "The must have been flipped to %s.", partition_name(partition));
+        log_debug(gc, free)("Flipped region %zu to gc for alloc region reservation", idx);
+        break;
+      }
+    }
+
+    if (region != nullptr) {
+      region->try_recycle_under_lock();
+      assert(region->affiliation() == FREE, "Must be free");
+      ShenandoahAffiliation affiliation = partition == ShenandoahFreeSetPartitionId::OldCollector ? OLD_GENERATION : YOUNG_GENERATION;
+      region->set_affiliation(affiliation);
+      region->make_regular_allocation(affiliation);
+      partitions()->retire_from_partition(partition, region->index(), region->used());
+      region->set_active_alloc_region();
+      partitions()->one_region_is_no_longer_empty(partition);
+      if (affiliation == OLD_GENERATION) {
+        region->end_preemptible_coalesce_and_fill();
+        _heap->old_generation()->clear_cards_for(region);
+      }
+    }
+    return region;
+  }
+
+  return nullptr;
 }
 
 template<typename Iter>
