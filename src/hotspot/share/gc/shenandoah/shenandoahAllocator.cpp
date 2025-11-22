@@ -34,6 +34,18 @@
 #include "runtime/os.hpp"
 #include "utilities/globalDefinitions.hpp"
 
+THREAD_LOCAL bool ShenandoahAllocator::_is_holding_heap_lock = false;
+
+ShenandoahAllocatorHeapLocker::ShenandoahAllocatorHeapLocker(ShenandoahAllocator* allocator): _allocator(allocator) {
+  ShenandoahHeap::heap()->lock()->lock(_allocator->_yield_to_safepoint);
+  _allocator->_is_holding_heap_lock = true;
+}
+
+ShenandoahAllocatorHeapLocker::~ShenandoahAllocatorHeapLocker() {
+  _allocator->_is_holding_heap_lock = false;
+  ShenandoahHeap::heap()->lock()->unlock();
+}
+
 ShenandoahAllocator::ShenandoahAllocator(uint const alloc_region_count, ShenandoahFreeSet* free_set, ShenandoahFreeSetPartitionId alloc_partition_id):
   _alloc_region_count(alloc_region_count), _free_set(free_set), _alloc_partition_id(alloc_partition_id), _alloc_partition_name(ShenandoahRegionPartitions::partition_name(alloc_partition_id)) {
   if (alloc_region_count > 0) {
@@ -56,38 +68,38 @@ public:
   ~ShenandoahHeapAccountingUpdater() {
     if (_need_update) {
       switch (_partition) {
-      case ShenandoahFreeSetPartitionId::Mutator:
-        _free_set->recompute_total_used</* UsedByMutatorChanged */ true,
-                                        /* UsedByCollectorChanged */ true, /* UsedByOldCollectorChanged */ true>();
-        _free_set->recompute_total_affiliated</* MutatorEmptiesChanged */ true, /* CollectorEmptiesChanged */ false,
-                                              /* OldCollectorEmptiesChanged */ false, /* MutatorSizeChanged */ false,
-                                              /* CollectorSizeChanged */ false, /* OldCollectorSizeChanged */ false,
-                                              /* AffiliatedChangesAreYoungNeutral */ false, /* AffiliatedChangesAreGlobalNeutral */ false,
-                                              /* UnaffiliatedChangesAreYoungNeutral */ false>();
+        case ShenandoahFreeSetPartitionId::Mutator:
+          _free_set->recompute_total_used</* UsedByMutatorChanged */ true,
+                                          /* UsedByCollectorChanged */ true, /* UsedByOldCollectorChanged */ true>();
+          _free_set->recompute_total_affiliated</* MutatorEmptiesChanged */ true, /* CollectorEmptiesChanged */ false,
+                                                /* OldCollectorEmptiesChanged */ false, /* MutatorSizeChanged */ false,
+                                                /* CollectorSizeChanged */ false, /* OldCollectorSizeChanged */ false,
+                                                /* AffiliatedChangesAreYoungNeutral */ false, /* AffiliatedChangesAreGlobalNeutral */ false,
+                                                /* UnaffiliatedChangesAreYoungNeutral */ false>();
 
-        break;
-      case ShenandoahFreeSetPartitionId::Collector:
-        _free_set->recompute_total_used</* UsedByMutatorChanged */ true,
-                                        /* UsedByCollectorChanged */ true, /* UsedByOldCollectorChanged */ true>();
-        _free_set->recompute_total_affiliated</* MutatorEmptiesChanged */ true, /* CollectorEmptiesChanged */ true,
-                                              /* OldCollectorEmptiesChanged */ false, /* MutatorSizeChanged */ true,
-                                              /* CollectorSizeChanged */ true, /* OldCollectorSizeChanged */ false,
-                                              /* AffiliatedChangesAreYoungNeutral */ false, /* AffiliatedChangesAreGlobalNeutral */ false,
-                                              /* UnaffiliatedChangesAreYoungNeutral */ false>();
-        break;
-      case ShenandoahFreeSetPartitionId::OldCollector:
-        _free_set->recompute_total_used</* UsedByMutatorChanged */ true,
-                                        /* UsedByCollectorChanged */ true, /* UsedByOldCollectorChanged */ true>();
-        _free_set->recompute_total_affiliated</* MutatorEmptiesChanged */ true, /* CollectorEmptiesChanged */ false,
-                                              /* OldCollectorEmptiesChanged */ true, /* MutatorSizeChanged */ true,
-                                              /* CollectorSizeChanged */ false, /* OldCollectorSizeChanged */ true,
-                                              /* AffiliatedChangesAreYoungNeutral */ false, /* AffiliatedChangesAreGlobalNeutral */ false,
-                                              /* UnaffiliatedChangesAreYoungNeutral */ false>();
-        break;
-      case ShenandoahFreeSetPartitionId::NotFree:
-      default:
-        assert(false, "won't happen");
-    }
+          break;
+        case ShenandoahFreeSetPartitionId::Collector:
+          _free_set->recompute_total_used</* UsedByMutatorChanged */ true,
+                                          /* UsedByCollectorChanged */ true, /* UsedByOldCollectorChanged */ true>();
+          _free_set->recompute_total_affiliated</* MutatorEmptiesChanged */ true, /* CollectorEmptiesChanged */ true,
+                                                /* OldCollectorEmptiesChanged */ false, /* MutatorSizeChanged */ true,
+                                                /* CollectorSizeChanged */ true, /* OldCollectorSizeChanged */ false,
+                                                /* AffiliatedChangesAreYoungNeutral */ false, /* AffiliatedChangesAreGlobalNeutral */ false,
+                                                /* UnaffiliatedChangesAreYoungNeutral */ false>();
+          break;
+        case ShenandoahFreeSetPartitionId::OldCollector:
+          _free_set->recompute_total_used</* UsedByMutatorChanged */ true,
+                                          /* UsedByCollectorChanged */ true, /* UsedByOldCollectorChanged */ true>();
+          _free_set->recompute_total_affiliated</* MutatorEmptiesChanged */ true, /* CollectorEmptiesChanged */ false,
+                                                /* OldCollectorEmptiesChanged */ true, /* MutatorSizeChanged */ true,
+                                                /* CollectorSizeChanged */ false, /* OldCollectorSizeChanged */ true,
+                                                /* AffiliatedChangesAreYoungNeutral */ false, /* AffiliatedChangesAreGlobalNeutral */ false,
+                                                /* UnaffiliatedChangesAreYoungNeutral */ false>();
+          break;
+        case ShenandoahFreeSetPartitionId::NotFree:
+        default:
+          assert(false, "won't happen");
+      }
     }
   }
 
@@ -115,7 +127,7 @@ HeapWord* ShenandoahAllocator::attempt_allocation(ShenandoahAllocRequest& req, b
 }
 
 HeapWord* ShenandoahAllocator::attempt_allocation_slow(ShenandoahAllocRequest& req, bool& in_new_region) {
-  ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock(), _yield_to_safepoint);
+  ShenandoahAllocatorHeapLocker locker(this);
   ShenandoahHeapAccountingUpdater accounting_updater(_free_set, _alloc_partition_id);
   uint regions_ready_for_refresh = 0u;
   HeapWord* obj = attempt_allocation_in_alloc_regions(req, in_new_region, alloc_start_index(), regions_ready_for_refresh);
@@ -152,7 +164,7 @@ HeapWord* ShenandoahAllocator::attempt_allocation_from_free_set(ShenandoahAllocR
   if (r != nullptr) {
     bool ready_for_retire = false;
     obj = atomic_allocate_in(r, false, req, in_new_region, ready_for_retire);
-    assert(obj != nullptr, "Should always succeed.");
+    guarantee(obj != nullptr, "Should always succeed.");
 
     _free_set->partitions()->increase_used(_alloc_partition_id, (req.actual_size() + req.waste()) * HeapWordSize);
     if (_alloc_partition_id == ShenandoahFreeSetPartitionId::Mutator) {
@@ -191,6 +203,9 @@ HeapWord* ShenandoahAllocator::attempt_allocation_in_alloc_regions(ShenandoahAll
       }
       if (obj != nullptr) {
         return obj;
+      }
+      if (i + 1 < _alloc_region_count) {
+        maybe_yield_to_safepoint();
       }
     } else if (r == nullptr) {
       regions_ready_for_refresh++;
@@ -293,6 +308,12 @@ int ShenandoahAllocator::refresh_alloc_regions(ShenandoahAllocRequest* req, bool
   }
 
   return 0;
+}
+
+inline void ShenandoahAllocator::maybe_yield_to_safepoint() {
+  if (_yield_to_safepoint && !_is_holding_heap_lock && Thread::current()->is_Java_thread()) {
+    ThreadBlockInVM tbivm(JavaThread::current());
+  }
 }
 
 HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest &req, bool &in_new_region) {

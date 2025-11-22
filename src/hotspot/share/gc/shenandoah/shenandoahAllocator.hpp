@@ -36,7 +36,18 @@ enum class ShenandoahFreeSetPartitionId : uint8_t;
 class ShenandoahHeapRegion;
 class ShenandoahAllocRequest;
 
+class ShenandoahAllocator;
+
+class ShenandoahAllocatorHeapLocker : public StackObj {
+  ShenandoahAllocator* _allocator;
+public:
+  ShenandoahAllocatorHeapLocker(ShenandoahAllocator* allocator);
+  ~ShenandoahAllocatorHeapLocker();
+};
+
 class ShenandoahAllocator : public CHeapObj<mtGC> {
+  friend class ShenandoahAllocatorHeapLocker;
+  static THREAD_LOCAL bool _is_holding_heap_lock;
 protected:
   struct ShenandoahAllocRegion {
     ShenandoahHeapRegion* volatile _address;
@@ -74,6 +85,9 @@ protected:
 
   // Refresh new alloc regions, allocate the object in the new alloc region.
   int refresh_alloc_regions(ShenandoahAllocRequest* req = nullptr, bool* in_new_region = nullptr, HeapWord** obj = nullptr);
+
+  // Yield to safefepoint if condition allows.
+  inline void maybe_yield_to_safepoint();
 #ifdef ASSERT
   virtual void verify(ShenandoahAllocRequest& req) { }
 #endif
