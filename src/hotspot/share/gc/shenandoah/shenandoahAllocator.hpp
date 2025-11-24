@@ -50,8 +50,8 @@ class ShenandoahAllocator : public CHeapObj<mtGC> {
   static THREAD_LOCAL bool _is_holding_heap_lock;
 protected:
   struct ShenandoahAllocRegion {
-    ShenandoahHeapRegion* volatile _address;
-    int                            _alloc_region_index;
+    ShenandoahHeapRegion* volatile  address;
+    int                             alloc_region_index;
   };
 
   PaddedEnd<ShenandoahAllocRegion>* _alloc_regions;
