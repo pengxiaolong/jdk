@@ -205,7 +205,7 @@ HeapWord* ShenandoahAllocator::attempt_allocation_in_alloc_regions(ShenandoahAll
       if (i + 1 < _alloc_region_count) {
         maybe_yield_to_safepoint();
       }
-    } else if (r == nullptr) {
+    } else if (r == nullptr || !r->is_active_alloc_region()) {
       regions_ready_for_refresh++;
     }
     if (++i == _alloc_region_count) {
