@@ -311,8 +311,12 @@ int ShenandoahAllocator::refresh_alloc_regions(ShenandoahAllocRequest* req, bool
 }
 
 inline void ShenandoahAllocator::maybe_yield_to_safepoint() {
-  if (_yield_to_safepoint && !_is_holding_heap_lock && Thread::current()->is_Java_thread()) {
+  if (_yield_to_safepoint && !_is_holding_heap_lock && SafepointSynchronize::is_synchronizing() && Thread::current()->is_Java_thread()) {
     ThreadBlockInVM tbivm(JavaThread::current());
+    while (SafepointSynchronize::is_synchronizing() &&
+           !SafepointMechanism::local_poll_armed(JavaThread::current())) {
+      os::naked_yield();
+    }
   }
 }
 
