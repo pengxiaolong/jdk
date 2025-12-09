@@ -165,5 +165,12 @@ TEST_VM_F(ShenandoahOldGenerationTest, test_actual_size_exceeds_promotion_reserv
   EXPECT_FALSE(promotions_enabled()) << "New plab can only be used for evacuations";
 }
 
+TEST_VM_F(ShenandoahOldGenerationTest, test_expend_promoted_should_increase_expended) {
+  SKIP_IF_NOT_SHENANDOAH();
+  size_t expended_before = old->get_promoted_expended();
+  old->expend_promoted(128);
+  size_t expended_after = old->get_promoted_expended();
+  EXPECT_EQ(expended_before + 128, expended_after) << "Should expend promotion";
+}
 
 #undef SKIP_IF_NOT_SHENANDOAH
