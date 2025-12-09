@@ -38,7 +38,6 @@ template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 ShenandoahAllocator<ALLOC_PARTITION>::ShenandoahAllocator(uint const alloc_region_count, ShenandoahFreeSet* free_set):
   _alloc_region_count(alloc_region_count), _free_set(free_set), _alloc_partition_name(ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION)) {
   if (alloc_region_count > 0) {
-    _alloc_regions = PaddedArray<ShenandoahAllocRegion, mtGC>::create_unfreeable(alloc_region_count);
     for (uint i = 0; i < alloc_region_count; i++) {
       _alloc_regions[i].address = nullptr;
       _alloc_regions[i].alloc_region_index = i;

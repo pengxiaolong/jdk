@@ -28,7 +28,6 @@
 
 #include "gc/shenandoah/shenandoahFreeSetPartitionId.hpp"
 #include "memory/allocation.hpp"
-#include "memory/padded.hpp"
 #include "utilities/globalDefinitions.hpp"
 
 class ShenandoahFreeSet;
@@ -38,13 +37,16 @@ class ShenandoahAllocRequest;
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 class ShenandoahAllocator : public CHeapObj<mtGC> {
+public:
+  static constexpr uint             MAX_ALLOC_REGION_COUNT = 128;
+
 protected:
   struct ShenandoahAllocRegion {
     ShenandoahHeapRegion* volatile  address;
     int                             alloc_region_index;
   };
 
-  PaddedEnd<ShenandoahAllocRegion>*  _alloc_regions;
+  ShenandoahAllocRegion              _alloc_regions[MAX_ALLOC_REGION_COUNT];
   uint  const                        _alloc_region_count;
   ShenandoahFreeSet* const           _free_set;
   const char*                        _alloc_partition_name;
@@ -80,8 +82,6 @@ protected:
 #endif
 
 public:
-  static constexpr uint             MAX_ALLOC_REGION_COUNT = 128;
-
   ShenandoahAllocator(uint alloc_region_count, ShenandoahFreeSet* free_set);
   virtual ~ShenandoahAllocator() { }
 
