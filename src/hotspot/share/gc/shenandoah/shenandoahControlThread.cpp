@@ -136,7 +136,7 @@ void ShenandoahControlThread::run_service() {
     // Choose which GC mode to run in. The block below should select a single mode.
     ShenandoahGC::ShenandoahDegenPoint degen_point = ShenandoahGC::_degenerated_unset;
 
-    if (gc_request.gc_requested) {
+    if (gc_request.gc_requested || gc_request.alloc_failure_pending) {
       run_gc_cycle = true;
       if (gc_request.alloc_failure_pending) {
         assert(gc_request.cause == GCCause::_allocation_failure, "Must be");
@@ -227,7 +227,7 @@ void ShenandoahControlThread::run_service() {
       heap->print_after_gc();
 
       // If this was the requested GC cycle, notify waiters about it
-      if (gc_request.gc_requested && !gc_request.alloc_failure_pending) {
+      if (gc_request.gc_requested) {
         notify_gc_waiters();
       }
 
@@ -271,7 +271,7 @@ void ShenandoahControlThread::run_service() {
     if (ShenandoahUncommit) {
       if (heap->check_soft_max_changed()) {
         heap->notify_soft_max_changed();
-      } else if (gc_request.gc_requested && !gc_request.alloc_failure_pending) {
+      } else if (gc_request.gc_requested) {
         heap->notify_explicit_gc_requested();
       }
     }
@@ -431,7 +431,9 @@ void ShenandoahControlThread::notify_control_thread(GCCause::Cause cause, Shenan
   // latest requested gc cause when the flag is set.
   MonitorLocker controller(&_control_lock, Mutex::_no_safepoint_check_flag);
   _requested_gc_cause = cause;
-  _gc_requested.set();
+  if (!ShenandoahCollectorPolicy::is_allocation_failure(cause)) {
+    _gc_requested.set();
+  }
   if (!ShenandoahHeap::heap()->cancelled_gc() &&
       ShenandoahCollectorPolicy::is_allocation_failure(cause) &&
       _current_concurrent_gc != nullptr) {
@@ -512,12 +514,14 @@ void ShenandoahControlThread::check_for_request(ShenandoahGCRequest& request) {
   request.alloc_failure_pending = ShenandoahCollectorPolicy::is_allocation_failure(cancelled_cause) ||
                                   ShenandoahCollectorPolicy::is_allocation_failure(requested_gc_cause) ||
                                   _outstanding_mutator_alloc_words.load_relaxed() > 0;
-  request.gc_requested = _gc_requested.is_set() || request.alloc_failure_pending;
+  request.gc_requested = _gc_requested.is_set();
   request.cause = request.alloc_failure_pending ? GCCause::_allocation_failure : requested_gc_cause;
   request.cancelled_cause = cancelled_cause;
 
-  if (request.gc_requested) {
+  if (request.gc_requested || request.alloc_failure_pending) {
     _requested_gc_cause = GCCause::_no_gc;
-    _gc_requested.unset();
+    if (request.gc_requested) {
+      _gc_requested.unset();
+    }
   }
 }
