@@ -31,6 +31,9 @@
 #include "gc/shenandoah/shenandoahGC.hpp"
 #include "gc/shenandoah/shenandoahPadding.hpp"
 #include "gc/shenandoah/shenandoahSharedVariables.hpp"
+#include "runtime/atomic.hpp"
+
+class ShenandoahConcurrentGC;
 
 class ShenandoahControlThread: public ShenandoahController {
 private:
@@ -48,6 +51,20 @@ private:
   // This lock is used to coordinate waking up the control thread
   Monitor _control_lock;
 
+  WaitBarrier         _mutator_wait_barrier;
+  Atomic<int>         _current_barrier_tag;
+  Atomic<size_t>      _outstanding_mutator_alloc_words;
+  Atomic<bool>        _mutator_wait_barrier_armed;
+  ShenandoahConcurrentGC *_current_concurrent_gc;
+
+  struct ShenandoahGCRequest {
+    bool gc_requested = false;
+    bool alloc_failure_pending = false;
+    GCCause::Cause cause = GCCause::_last_gc_cause;
+    GCCause::Cause cancelled_cause = GCCause::_no_gc;
+    GCMode mode = none;
+  };
+
 public:
   ShenandoahControlThread();
 
@@ -57,6 +74,12 @@ public:
   void request_gc(GCCause::Cause cause) override;
   // Sets the requested cause and flag and notifies the control thread
   void notify_control_thread(GCCause::Cause cause, ShenandoahGeneration* generation) override;
+  void handle_alloc_failure(const ShenandoahAllocRequest& req, bool block) override;
+
+  size_t outstanding_mutator_alloc_words() {
+    return _outstanding_mutator_alloc_words.load_acquire();
+  }
+  void wake_mutators_at_current_barrier_tag();
 
 private:
   // Sets the requested cause and flag and notifies the control thread
@@ -76,6 +99,20 @@ private:
   GCCause::Cause current_requested_gc_cause();
 
   void reset_requested_gc();
+
+  void check_for_request(ShenandoahGCRequest& request);
+
+  // Arm wait barrier which blocks mutator when mutator fails to allocate memory.
+  // In most of the time, barrier is armed, controller thread disarms the barrier after making progress
+  // to reclaim memory and arm the barrier agin with new tag for further allocation failures.
+  void arm_mutator_wait_barrier(int barrier_tag);
+
+  // Disarm the barrier to wake up any mutator waiting ath the barrier.
+  void disarm_mutator_wait_barrier();
+
+  // Called from handle_alloc_failure in mutator thread to block the thread at the barrier.
+  // When the mutator thread is blocked at the barrier, it must be safepoint safe.
+  void block_mutator_alloc_at_wait_barrier(const ShenandoahAllocRequest& req);
 };
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHCONTROLTHREAD_HPP

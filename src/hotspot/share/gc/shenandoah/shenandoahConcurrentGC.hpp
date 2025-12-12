@@ -44,6 +44,7 @@ class ShenandoahConcurrentGC : public ShenandoahGC {
   friend class VM_ShenandoahInitUpdateRefs;
   friend class VM_ShenandoahFinalUpdateRefs;
   friend class VM_ShenandoahFinalRoots;
+  friend class ShenandoahControlThread;
 
 protected:
   ShenandoahConcurrentMark    _mark;
@@ -52,6 +53,7 @@ private:
   ShenandoahDegenPoint        _degen_point;
   bool                        _abbreviated;
   const bool                  _do_old_gc_bootstrap;
+  uint                        _concurrent_workers;
 
 public:
   ShenandoahConcurrentGC(ShenandoahGeneration* generation, bool do_old_gc_bootstrap);
@@ -64,6 +66,7 @@ public:
   // Return true if this cycle found enough immediate garbage to skip evacuation
   bool abbreviated() const { return _abbreviated; }
 
+  void surge_worker_threads_for_allocation_failure(uint num_workers);
 protected:
   // Entry points to STW GC operations, these cause a related safepoint, that then
   // call the entry method below

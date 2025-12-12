@@ -479,7 +479,7 @@ private:
   virtual void final_update_refs_update_region_states();
 
   void rendezvous_threads(const char* name);
-  void recycle_trash();
+  uint recycle_trash();
 public:
   void rebuild_free_set(bool concurrent);
   void notify_gc_progress();

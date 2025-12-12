@@ -1746,8 +1746,14 @@ HeapWord* ShenandoahFreeSet::allocate_contiguous(ShenandoahAllocRequest& req, bo
 
 class ShenandoahRecycleTrashedRegionClosure final : public ShenandoahHeapRegionClosure {
 public:
+  Atomic<uint> recycled;
+  ShenandoahRecycleTrashedRegionClosure() : recycled(0u){
+  }
   void heap_region_do(ShenandoahHeapRegion* r) {
-    r->try_recycle();
+    if (r->is_trash()) {
+      r->try_recycle();
+      recycled.add_then_fetch((uint) ShenandoahHeapRegion::region_size_words(), memory_order_relaxed);
+    }
   }
 
   bool is_thread_safe() {
@@ -1755,7 +1761,7 @@ public:
   }
 };
 
-void ShenandoahFreeSet::recycle_trash() {
+uint ShenandoahFreeSet::recycle_trash() {
   // lock is not non-reentrant, check we don't have it
   shenandoah_assert_not_heaplocked();
 
@@ -1764,6 +1770,7 @@ void ShenandoahFreeSet::recycle_trash() {
 
   ShenandoahRecycleTrashedRegionClosure closure;
   heap->parallel_heap_region_iterate(&closure);
+  return closure.recycled.load_acquire();
 }
 
 bool ShenandoahFreeSet::transfer_one_region_from_mutator_to_old_collector(size_t idx, size_t alloc_capacity, const bool defer_accounting_recomputation) {

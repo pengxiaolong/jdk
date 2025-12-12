@@ -69,7 +69,7 @@ public:
 
   // This cancels the collection cycle and has an option to block
   // until another cycle completes successfully.
-  void handle_alloc_failure(const ShenandoahAllocRequest& req, bool block);
+  virtual void handle_alloc_failure(const ShenandoahAllocRequest& req, bool block);
 
   // Invoked for allocation failures during evacuation. This cancels
   // the collection cycle without blocking.

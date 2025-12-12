@@ -39,17 +39,79 @@
 #include "logging/log.hpp"
 #include "memory/metaspaceStats.hpp"
 #include "memory/metaspaceUtils.hpp"
+#include "runtime/interfaceSupport.inline.hpp"
 
 ShenandoahControlThread::ShenandoahControlThread() :
   ShenandoahController(),
   _requested_gc_cause(GCCause::_no_gc),
   _degen_point(ShenandoahGC::_degenerated_outside_cycle),
-  _control_lock(Mutex::nosafepoint - 2, "ShenandoahGCRequest_lock", true) {
+  _control_lock(Mutex::nosafepoint - 2, "ShenandoahGCRequest_lock", true),
+  _mutator_wait_barrier(this),
+  _current_barrier_tag(1),
+  _outstanding_mutator_alloc_words(0),
+  _mutator_wait_barrier_armed(false),
+  _current_concurrent_gc(nullptr)
+{
   set_name("Shenandoah Control Thread");
   create_and_start();
 }
 
+void ShenandoahControlThread::handle_alloc_failure(const ShenandoahAllocRequest& req, bool block) {
+  assert(current()->is_Java_thread(), "expect Java thread here");
+
+  const bool is_humongous = ShenandoahHeapRegion::requires_humongous(req.size());
+  const GCCause::Cause cause = is_humongous ? GCCause::_shenandoah_humongous_allocation_failure : GCCause::_allocation_failure;
+
+  ShenandoahHeap* const heap = ShenandoahHeap::heap();
+  log_info(gc)("Failed to allocate %s, " PROPERFMT, req.type_string(), PROPERFMTARGS(req.size() * HeapWordSize));
+
+  if (!block) {
+    heap->cancel_gc(cause);
+    notify_control_thread(cause, heap->mode()->is_generational() ? reinterpret_cast<ShenandoahGeneration *>(heap->young_generation()) : heap->global_generation());
+    return;
+  }
+
+  _outstanding_mutator_alloc_words.add_then_fetch(req.size());
+  notify_control_thread(cause, heap->mode()->is_generational() ? reinterpret_cast<ShenandoahGeneration *>(heap->young_generation()) : heap->global_generation());
+
+  if (!should_terminate()) {
+    block_mutator_alloc_at_wait_barrier(req);
+  }
+}
+
+void ShenandoahControlThread::arm_mutator_wait_barrier(const int barrier_tag) {
+  assert(!_mutator_wait_barrier_armed.load_acquire(), "Wait barrier mutator must not be armed");
+  _mutator_wait_barrier.arm(barrier_tag);
+  _current_barrier_tag.release_store(barrier_tag);
+  _mutator_wait_barrier_armed.release_store(true);
+}
+
+void ShenandoahControlThread::disarm_mutator_wait_barrier() {
+  assert(_mutator_wait_barrier_armed.load_acquire(), "Wait barrier mutator must be armed");
+  _mutator_wait_barrier_armed.release_store(false);
+  _mutator_wait_barrier.disarm();
+}
+
+void ShenandoahControlThread::wake_mutators_at_current_barrier_tag() {
+  const int previous_barrier_tag = _current_barrier_tag.load_acquire();
+  disarm_mutator_wait_barrier();
+  arm_mutator_wait_barrier(previous_barrier_tag + 1);
+  assert(_current_barrier_tag.load_relaxed() == previous_barrier_tag + 1, "Barrier tag must have changed.");
+}
+
+void ShenandoahControlThread::block_mutator_alloc_at_wait_barrier(const ShenandoahAllocRequest& req) {
+  assert(current()->is_Java_thread(), "expect Java thread here");
+  if (_mutator_wait_barrier_armed.load_acquire()) {
+    ThreadBlockInVM tbivm(JavaThread::current());
+    _mutator_wait_barrier.wait(_current_barrier_tag.load_acquire());
+    _outstanding_mutator_alloc_words.sub_then_fetch(req.size());
+  }
+}
+
 void ShenandoahControlThread::run_service() {
+  // arm mutator wait barrier before everything else
+  arm_mutator_wait_barrier(_current_barrier_tag.load_acquire());
+
   ShenandoahHeap* const heap = ShenandoahHeap::heap();
   const GCMode default_mode = concurrent_normal;
   const GCCause::Cause default_cause = GCCause::_shenandoah_concurrent_gc;
@@ -60,60 +122,58 @@ void ShenandoahControlThread::run_service() {
   ShenandoahCollectorPolicy* const policy = heap->shenandoah_policy();
   ShenandoahHeuristics* const heuristics = heap->heuristics();
   while (!should_terminate()) {
-    const GCCause::Cause cancelled_cause = heap->cancelled_cause();
-    if (cancelled_cause == GCCause::_shenandoah_stop_vm) {
+    // Figure out if we have pending requests.
+    ShenandoahGCRequest gc_request;
+    check_for_request(gc_request);
+
+    assert (!gc_request.gc_requested || gc_request.cause != GCCause::_last_gc_cause, "GC cause should be set");
+
+    if (gc_request.cancelled_cause == GCCause::_shenandoah_stop_vm) {
       break;
     }
 
-    // Figure out if we have pending requests.
-    const bool is_gc_requested = _gc_requested.is_set();
-    const GCCause::Cause requested_gc_cause = current_requested_gc_cause();
-    const bool alloc_failure_pending = ShenandoahCollectorPolicy::is_allocation_failure(cancelled_cause) ||
-                                       ShenandoahCollectorPolicy::is_allocation_failure(requested_gc_cause);
-    if (is_gc_requested) {
-      reset_requested_gc();
-    }
+    bool run_gc_cycle = false;
     // Choose which GC mode to run in. The block below should select a single mode.
-    GCMode mode = none;
-    GCCause::Cause cause = GCCause::_last_gc_cause;
     ShenandoahGC::ShenandoahDegenPoint degen_point = ShenandoahGC::_degenerated_unset;
 
-    if (alloc_failure_pending) {
-      // Allocation failure takes precedence: we have to deal with it first thing
-      heuristics->log_trigger("Handle Allocation Failure");
+    if (gc_request.gc_requested) {
+      run_gc_cycle = true;
+      if (gc_request.alloc_failure_pending) {
+        assert(gc_request.cause == GCCause::_allocation_failure, "Must be");
+        // Allocation failure takes precedence: we have to deal with it first thing
+        heuristics->log_trigger("Handle Allocation Failure");
 
-      cause = GCCause::_allocation_failure;
+        // Consume the degen point, and seed it with default value
+        degen_point = _degen_point;
+        _degen_point = ShenandoahGC::_degenerated_outside_cycle;
 
-      // Consume the degen point, and seed it with default value
-      degen_point = _degen_point;
-      _degen_point = ShenandoahGC::_degenerated_outside_cycle;
-
-      if (ShenandoahDegeneratedGC && heuristics->should_degenerate_cycle()) {
-        heuristics->record_allocation_failure_gc();
-        policy->record_alloc_failure_to_degenerated(degen_point);
-        mode = stw_degenerated;
+        if (ShenandoahDegeneratedGC && heuristics->should_degenerate_cycle()) {
+          heuristics->record_allocation_failure_gc();
+          policy->record_alloc_failure_to_degenerated(degen_point);
+          gc_request.mode = stw_degenerated;
+        } else {
+          heuristics->record_allocation_failure_gc();
+          policy->record_alloc_failure_to_full();
+          gc_request.mode = stw_full;
+        }
       } else {
-        heuristics->record_allocation_failure_gc();
-        policy->record_alloc_failure_to_full();
-        mode = stw_full;
-      }
-    } else if (is_gc_requested) {
-      cause = requested_gc_cause;
-      heuristics->log_trigger("GC request (%s)", GCCause::to_string(cause));
-      heuristics->record_requested_gc();
+        heuristics->log_trigger("GC request (%s)", GCCause::to_string(gc_request.cause));
+        heuristics->record_requested_gc();
 
-      if (ShenandoahCollectorPolicy::should_run_full_gc(cause)) {
-        mode = stw_full;
-      } else {
-        mode = default_mode;
-        // Unload and clean up everything
-        heap->set_unload_classes(heuristics->can_unload_classes());
+        if (ShenandoahCollectorPolicy::should_run_full_gc(gc_request.cause)) {
+          gc_request.mode = stw_full;
+        } else {
+          gc_request.mode = default_mode;
+          // Unload and clean up everything
+          heap->set_unload_classes(heuristics->can_unload_classes());
+        }
       }
     } else {
       // Potential normal cycle: ask heuristics if it wants to act
       if (heuristics->should_start_gc()) {
-        mode = default_mode;
-        cause = default_cause;
+        run_gc_cycle = true;
+        gc_request.mode = default_mode;
+        gc_request.cause = default_cause;
       }
 
       // Ask policy if this cycle wants to process references or unload classes
@@ -122,14 +182,11 @@ void ShenandoahControlThread::run_service() {
 
     // Blow all soft references on this cycle, if handling allocation failure,
     // either implicit or explicit GC request,  or we are requested to do so unconditionally.
-    if (alloc_failure_pending || is_gc_requested || ShenandoahAlwaysClearSoftRefs) {
+    if (gc_request.gc_requested || ShenandoahAlwaysClearSoftRefs) {
       heap->global_generation()->ref_processor()->set_soft_reference_policy(true);
     }
 
-    const bool gc_requested = (mode != none);
-    assert (!gc_requested || cause != GCCause::_last_gc_cause, "GC cause should be set");
-
-    if (gc_requested) {
+    if (run_gc_cycle) {
       // Cannot uncommit bitmap slices during concurrent reset
       ShenandoahNoUncommitMark forbid_region_uncommit(heap);
 
@@ -152,15 +209,17 @@ void ShenandoahControlThread::run_service() {
       heap->free_set()->log_status_under_lock();
 
       heap->print_before_gc();
-      switch (mode) {
+      switch (gc_request.mode) {
         case concurrent_normal:
-          service_concurrent_normal_cycle(cause);
+          service_concurrent_normal_cycle(gc_request.cause);
           break;
         case stw_degenerated:
-          service_stw_degenerated_cycle(cause, degen_point);
+          service_stw_degenerated_cycle(gc_request.cause, degen_point);
+          wake_mutators_at_current_barrier_tag();
           break;
         case stw_full:
-          service_stw_full_cycle(cause);
+          service_stw_full_cycle(gc_request.cause);
+          wake_mutators_at_current_barrier_tag();
           break;
         default:
           ShouldNotReachHere();
@@ -168,14 +227,8 @@ void ShenandoahControlThread::run_service() {
       heap->print_after_gc();
 
       // If this was the requested GC cycle, notify waiters about it
-      if (is_gc_requested) {
+      if (gc_request.gc_requested && !gc_request.alloc_failure_pending) {
         notify_gc_waiters();
-      }
-
-      // If this cycle completed without being cancelled, or alloc_failure_pending is true(degen),
-      // notify waiters about it
-      if (!heap->cancelled_gc() || alloc_failure_pending) {
-        notify_alloc_failure_waiters();
       }
 
       // Report current free set state at the end of cycle, whether
@@ -218,7 +271,7 @@ void ShenandoahControlThread::run_service() {
     if (ShenandoahUncommit) {
       if (heap->check_soft_max_changed()) {
         heap->notify_soft_max_changed();
-      } else if (is_gc_requested) {
+      } else if (gc_request.gc_requested && !gc_request.alloc_failure_pending) {
         heap->notify_explicit_gc_requested();
       }
     }
@@ -295,16 +348,29 @@ void ShenandoahControlThread::service_concurrent_normal_cycle(GCCause::Cause cau
   TraceCollectorStats tcs(heap->monitoring_support()->concurrent_collection_counters());
 
   ShenandoahConcurrentGC gc(heap->global_generation(), false);
+  {
+    MutexLocker ml(&_control_lock, Mutex::_no_safepoint_check_flag);
+    _current_concurrent_gc = &gc;
+  }
+  int barrier_tag = _current_barrier_tag.load_acquire();
   if (gc.collect(cause)) {
     // Cycle is complete.  There were no failed allocation requests and no degeneration, so count this as good progress.
     heap->notify_gc_progress();
     heap->global_generation()->heuristics()->record_success_concurrent();
     heap->shenandoah_policy()->record_success_concurrent(false, gc.abbreviated());
     heap->log_heap_status("At end of GC");
+    if (barrier_tag == _current_barrier_tag.load_acquire()) {
+      // mutators were not waken up during concurrent cycle, control thread needs to wake them after a successful gc
+      wake_mutators_at_current_barrier_tag();
+    }
   } else {
     assert(heap->cancelled_gc(), "Must have been cancelled");
     check_cancellation_or_degen(gc.degen_point());
     heap->log_heap_status("At end of cancelled GC");
+  }
+  {
+    MutexLocker ml(&_control_lock, Mutex::_no_safepoint_check_flag);
+    _current_concurrent_gc = nullptr;
   }
 }
 
@@ -366,6 +432,11 @@ void ShenandoahControlThread::notify_control_thread(GCCause::Cause cause, Shenan
   MonitorLocker controller(&_control_lock, Mutex::_no_safepoint_check_flag);
   _requested_gc_cause = cause;
   _gc_requested.set();
+  if (!ShenandoahHeap::heap()->cancelled_gc() &&
+      ShenandoahCollectorPolicy::is_allocation_failure(cause) &&
+      _current_concurrent_gc != nullptr) {
+    _current_concurrent_gc->surge_worker_threads_for_allocation_failure(ParallelGCThreads);
+  }
   controller.notify();
 }
 
@@ -423,6 +494,29 @@ GCCause::Cause ShenandoahControlThread::current_requested_gc_cause() {
 void ShenandoahControlThread::reset_requested_gc() {
   {
     MonitorLocker ml(&_control_lock, Mutex::_no_safepoint_check_flag);
+    _requested_gc_cause = GCCause::_no_gc;
+    _gc_requested.unset();
+  }
+}
+
+void ShenandoahControlThread::check_for_request(ShenandoahGCRequest& request) {
+  MonitorLocker ml(&_control_lock, Mutex::_no_safepoint_check_flag);
+  const GCCause::Cause cancelled_cause = ShenandoahHeap::heap()->cancelled_cause();
+  if (cancelled_cause == GCCause::_shenandoah_stop_vm) {
+    request.gc_requested = false;
+    request.alloc_failure_pending = false;
+    request.cancelled_cause = cancelled_cause;
+    return;
+  }
+  const GCCause::Cause requested_gc_cause = current_requested_gc_cause();
+  request.alloc_failure_pending = ShenandoahCollectorPolicy::is_allocation_failure(cancelled_cause) ||
+                                  ShenandoahCollectorPolicy::is_allocation_failure(requested_gc_cause) ||
+                                  _outstanding_mutator_alloc_words.load_relaxed() > 0;
+  request.gc_requested = _gc_requested.is_set() || request.alloc_failure_pending;
+  request.cause = request.alloc_failure_pending ? GCCause::_allocation_failure : requested_gc_cause;
+  request.cancelled_cause = cancelled_cause;
+
+  if (request.gc_requested) {
     _requested_gc_cause = GCCause::_no_gc;
     _gc_requested.unset();
   }

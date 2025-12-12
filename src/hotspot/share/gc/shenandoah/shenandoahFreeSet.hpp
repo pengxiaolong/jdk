@@ -785,7 +785,7 @@ public:
 
   void transfer_humongous_regions_from_mutator_to_old_collector(size_t xfer_regions, size_t humongous_waste_words);
 
-  void recycle_trash();
+  uint recycle_trash();
 
   // Acquire heap lock and log status, assuming heap lock is not acquired by the caller.
   void log_status_under_lock();
