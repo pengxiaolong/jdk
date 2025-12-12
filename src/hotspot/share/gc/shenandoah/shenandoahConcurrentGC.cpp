@@ -1277,6 +1277,10 @@ void ShenandoahConcurrentGC::op_cleanup_complete() {
                               _concurrent_workers == 0 ? ShenandoahWorkerPolicy::calc_workers_for_conc_cleanup() : _concurrent_workers,
                               "cleanup complete.");
   ShenandoahHeap::heap()->recycle_trash();
+  if (!ShenandoahHeap::heap()->mode()->is_generational()) {
+    ShenandoahControlThread* control_thread = reinterpret_cast<ShenandoahControlThread *>(ShenandoahHeap::heap()->control_thread());
+    control_thread->wake_mutators_at_current_barrier_tag();
+  }
 }
 
 void ShenandoahConcurrentGC::op_reset_after_collect() {
