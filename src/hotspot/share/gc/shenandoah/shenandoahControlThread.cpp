@@ -71,9 +71,7 @@ void ShenandoahControlThread::handle_alloc_failure(const ShenandoahAllocRequest&
     return;
   }
 
-  _outstanding_mutator_alloc_words.add_then_fetch(req.size());
   notify_control_thread(cause, heap->mode()->is_generational() ? reinterpret_cast<ShenandoahGeneration *>(heap->young_generation()) : heap->global_generation());
-
   if (!should_terminate()) {
     block_mutator_alloc_at_wait_barrier(req);
   }
@@ -103,6 +101,7 @@ void ShenandoahControlThread::block_mutator_alloc_at_wait_barrier(const Shenando
   assert(current()->is_Java_thread(), "expect Java thread here");
   if (_mutator_wait_barrier_armed.load_acquire()) {
     ThreadBlockInVM tbivm(JavaThread::current());
+    _outstanding_mutator_alloc_words.add_then_fetch(req.size());
     _mutator_wait_barrier.wait(_current_barrier_tag.load_acquire());
     _outstanding_mutator_alloc_words.sub_then_fetch(req.size());
   }
