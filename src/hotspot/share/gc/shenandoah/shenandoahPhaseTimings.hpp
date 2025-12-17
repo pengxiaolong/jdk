@@ -161,6 +161,7 @@ class outputStream;
   f(degen_gc_final_update_refs_rebuild_freeset,     "  Rebuild Free Set")              \
   f(degen_gc_update_roots,                          "  Degen Update Roots")            \
   SHENANDOAH_PAR_PHASE_DO(degen_gc_update_,         "    DU: ", f)                     \
+  f(degen_gc_cleanup_early,                         "  Cleanup Early")                       \
   f(degen_gc_cleanup_complete,                      "  Cleanup")                       \
   f(degen_gc_promote_regions,                       "  Degen Promote Regions")         \
   f(degen_gc_coalesce_and_fill,                     "  Degen Coalesce and Fill")       \

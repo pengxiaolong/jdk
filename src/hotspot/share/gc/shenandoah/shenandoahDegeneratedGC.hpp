@@ -49,6 +49,7 @@ private:
   void op_mark();
   void op_finish_mark();
   void op_prepare_evacuation();
+  void op_cleanup_early();
 
   void op_evacuate();
   void op_init_update_refs();

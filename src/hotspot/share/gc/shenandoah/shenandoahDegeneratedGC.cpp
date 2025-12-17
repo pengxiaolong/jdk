@@ -197,6 +197,8 @@ void ShenandoahDegenGC::op_degenerated() {
       /* Degen select Collection Set. etc. */
       op_prepare_evacuation();
 
+      op_cleanup_early();
+
     case _degenerated_evac:
       // If heuristics thinks we should do the cycle, this flag would be set,
       // and we can do evacuation. Otherwise, it would be the shortcut cycle.
@@ -378,6 +380,11 @@ void ShenandoahDegenGC::op_prepare_evacuation() {
 
 bool ShenandoahDegenGC::has_in_place_promotions(const ShenandoahHeap* heap) const {
   return heap->mode()->is_generational() && heap->old_generation()->has_in_place_promotions();
+}
+
+void ShenandoahDegenGC::op_cleanup_early() {
+  ShenandoahGCPhase phase(ShenandoahPhaseTimings::degen_gc_cleanup_early);
+  ShenandoahHeap::heap()->recycle_trash();
 }
 
 void ShenandoahDegenGC::op_evacuate() {
