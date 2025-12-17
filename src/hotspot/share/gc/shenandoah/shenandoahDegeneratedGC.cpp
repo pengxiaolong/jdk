@@ -197,8 +197,6 @@ void ShenandoahDegenGC::op_degenerated() {
       /* Degen select Collection Set. etc. */
       op_prepare_evacuation();
 
-      op_cleanup_early();
-
     case _degenerated_evac:
       // If heuristics thinks we should do the cycle, this flag would be set,
       // and we can do evacuation. Otherwise, it would be the shortcut cycle.
@@ -289,6 +287,10 @@ void ShenandoahDegenGC::op_degenerated() {
       ShenandoahCodeRoots::disarm_nmethods();
 
       op_cleanup_complete();
+
+      if (ShenandoahVerify) {
+        heap->verifier()->verify_after_update_refs(_generation);
+      }
 
       if (heap->mode()->is_generational()) {
         ShenandoahGenerationalHeap::heap()->complete_degenerated_cycle();
@@ -415,14 +417,6 @@ void ShenandoahDegenGC::op_update_roots() {
   update_roots(false /*full_gc*/);
 
   heap->update_heap_region_states(false /*concurrent*/);
-
-  if (ShenandoahVerify) {
-    heap->verifier()->verify_after_update_refs(_generation);
-  }
-
-  if (VerifyAfterGC) {
-    Universe::verify();
-  }
 
   heap->rebuild_free_set(false /*concurrent*/);
 }
