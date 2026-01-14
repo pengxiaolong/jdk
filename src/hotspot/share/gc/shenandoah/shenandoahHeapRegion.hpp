@@ -513,8 +513,12 @@ public:
 
   void reset_age() {
     uint current = age();
-    if (current != 0) {
-      AtomicAccess::store(&_age, uint(0));
+    if (current == 0u) return;
+    uint old;
+    while ((old = current) != 0u &&
+           (current = AtomicAccess::cmpxchg(&_age, old, 0u)) != old &&
+           current != 0u) { }
+    if (current != 0u) {
       CENSUS_NOISE(AtomicAccess::add(&_youth, current, memory_order_relaxed);)
     }
   }
