@@ -436,18 +436,22 @@ jint ShenandoahHeap::initialize() {
     _free_set = new ShenandoahFreeSet(this, _num_regions);
     post_initialize_heuristics();
 
-    // We are initializing free set.  We ignore cset region tallies.
-    size_t young_trashed_regions, old_trashed_regions, first_old, last_old, num_old;
-    _free_set->prepare_to_rebuild(young_trashed_regions, old_trashed_regions, first_old, last_old, num_old);
-    if (mode()->is_generational()) {
-      ShenandoahGenerationalHeap* gen_heap = ShenandoahGenerationalHeap::heap();
-      // We cannot call
-      //  gen_heap->young_generation()->heuristics()->bytes_of_allocation_runway_before_gc_trigger(young_cset_regions)
-      // until after the heap is fully initialized.  So we make up a safe value here.
-      size_t allocation_runway = InitialHeapSize / 2;
-      gen_heap->compute_old_generation_balance(allocation_runway, old_trashed_regions, young_trashed_regions);
+    {
+      ShenandoahHeapUsageAccountingLocker accounting_locker(_free_set->usage_accounting_lock());
+
+      // We are initializing free set.  We ignore cset region tallies.
+      size_t young_trashed_regions, old_trashed_regions, first_old, last_old, num_old;
+      _free_set->prepare_to_rebuild(young_trashed_regions, old_trashed_regions, first_old, last_old, num_old);
+      if (mode()->is_generational()) {
+        ShenandoahGenerationalHeap* gen_heap = ShenandoahGenerationalHeap::heap();
+        // We cannot call
+        //  gen_heap->young_generation()->heuristics()->bytes_of_allocation_runway_before_gc_trigger(young_cset_regions)
+        // until after the heap is fully initialized.  So we make up a safe value here.
+        size_t allocation_runway = InitialHeapSize / 2;
+        gen_heap->compute_old_generation_balance(allocation_runway, old_trashed_regions, young_trashed_regions);
+      }
+      _free_set->finish_rebuild(young_trashed_regions, old_trashed_regions, num_old);
     }
-    _free_set->finish_rebuild(young_trashed_regions, old_trashed_regions, num_old);
   }
 
   if (AlwaysPreTouch) {
@@ -2847,7 +2851,7 @@ ShenandoahHeapLocker::ShenandoahHeapLocker(ShenandoahHeapLock* lock, bool allow_
 #ifdef ASSERT
   ShenandoahFreeSet* free_set = ShenandoahHeap::heap()->free_set();
   // free_set is nullptr only at pre-initilization state
-  assert(free_set == nullptr || !free_set->rebuild_lock()->owned_by_self(), "Dead lock, can't acquire heap lock while holding free-set rebuild lock");
+  assert(free_set == nullptr || !free_set->usage_accounting_lock()->owned_by_self(), "Dead lock, can't acquire heap lock while holding usage accounting lock");
   assert(_lock != nullptr, "Must not");
 #endif
   _lock->lock(allow_block_for_safepoint);

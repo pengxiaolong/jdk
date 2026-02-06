@@ -798,6 +798,7 @@ void ShenandoahGeneration::prepare_regions_and_collection_set(bool concurrent) {
 
     collection_set->clear();
     ShenandoahHeapLocker locker(heap->lock());
+    ShenandoahHeapUsageAccountingLocker accounting_locker(_free_set->usage_accounting_lock());
     if (is_generational) {
       // Seed the collection set with resource area-allocated
       // preselected regions, which are removed when we exit this scope.
