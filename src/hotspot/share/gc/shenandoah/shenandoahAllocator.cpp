@@ -262,9 +262,16 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::allocate_in(ShenandoahHeapRegion
   HeapWord* obj = nullptr;
   size_t actual_size = req.size();
   if (req.is_lab_alloc()) {
-    obj = IS_SHARED_ALLOC_REGION ? region->allocate_lab_atomic(req, actual_size, ready_for_retire) : region->allocate_lab(req, actual_size);
+    if (ALLOC_PARTITION == ShenandoahFreeSetPartitionId::OldCollector) {
+      obj = IS_SHARED_ALLOC_REGION ? region->allocate_plab_atomic(req, actual_size, ready_for_retire) :
+                                     region->allocate_aligned(req.size(), req, CardTable::card_size());
+    } else {
+      obj = IS_SHARED_ALLOC_REGION ? region->allocate_lab_atomic(req, actual_size, ready_for_retire) :
+                                     region->allocate_lab(req, actual_size);
+    }
   } else {
-    obj = IS_SHARED_ALLOC_REGION ? region->allocate_atomic(actual_size, req, ready_for_retire) : region->allocate(req.size(), req);
+    obj = IS_SHARED_ALLOC_REGION ? region->allocate_atomic(actual_size, req, ready_for_retire) :
+                                   region->allocate(req.size(), req);
   }
   if (obj != nullptr) {
     assert(actual_size > 0, "Must be");
