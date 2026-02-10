@@ -49,7 +49,6 @@
   volatile_nonstatic_field(ShenandoahHeapRegion, _plab_allocs,     size_t)                                    \
   volatile_nonstatic_field(ShenandoahHeapRegion, _age,             uint)                                      \
   CENSUS_NOISE(volatile_nonstatic_field(ShenandoahHeapRegion, _youth,  uint))                                 \
-  nonstatic_field(ShenandoahHeapRegion, _top,                      HeapWord*)                                 \
   nonstatic_field(ShenandoahHeapRegion, _end,                      HeapWord* const)                           \
   nonstatic_field(ShenandoahFreeSet, _total_global_used,           size_t)                                    \
 
