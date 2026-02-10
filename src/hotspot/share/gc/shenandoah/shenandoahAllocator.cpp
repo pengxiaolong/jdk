@@ -459,7 +459,6 @@ HeapWord* ShenandoahOldCollectorAllocator::allocate(ShenandoahAllocRequest& req,
   HeapWord* obj = attempt_allocation(req, in_new_region);
   if (obj != nullptr) {
     if (req.is_lab_alloc()) {
-      old_gen->card_scan()->register_object_without_lock(obj);
       Thread* thread = Thread::current();
       ShenandoahThreadLocalData::reset_plab_promoted(thread);
       size_t const actual_bytes = req.actual_size() * HeapWordSize;
@@ -482,7 +481,8 @@ HeapWord* ShenandoahOldCollectorAllocator::allocate(ShenandoahAllocRequest& req,
                             actual_bytes, old_gen->get_promoted_expended(), old_gen->get_promoted_reserve(), BOOL_TO_STR(ShenandoahHeap::heap()->collection_set()->has_old_regions()));
       }
     } else {
-      old_gen->card_scan()->register_object_without_lock(obj);
+      ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
+      old_gen->card_scan()->register_object(obj);
     }
   } else if (promotion_budget_claimed && (req.is_promotion() || req.is_lab_alloc())) {
     // return the claimed promotion budget when fails to allocate memory after claiming promotion budget.
