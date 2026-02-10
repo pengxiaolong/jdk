@@ -475,8 +475,7 @@ HeapWord* ShenandoahOldCollectorAllocator::allocate(ShenandoahAllocRequest& req,
                             actual_bytes, old_gen->get_promoted_expended(), old_gen->get_promoted_reserve(), BOOL_TO_STR(ShenandoahHeap::heap()->collection_set()->has_old_regions()));
       }
     } else {
-      ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
-      old_gen->card_scan()->register_object(obj);
+      old_gen->card_scan()->register_object_without_lock(obj);
     }
   } else if (promotion_budget_claimed && (req.is_promotion() || req.is_lab_alloc())) {
     // return the claimed promotion budget when fails to allocate memory after claiming promotion budget.
