@@ -117,9 +117,11 @@ protected:
         break;
       case ShenandoahFreeSetPartitionId::Collector:
         assert(req.is_gc_alloc() && req.affiliation() == YOUNG_GENERATION, "Must be gc alloc request in young gen");
+        assert(!ShenandoahHeapRegion::requires_humongous(req.size()), "Not allow to allocate humongous in Collector partition");
         break;
       case ShenandoahFreeSetPartitionId::OldCollector:
         assert(req.is_gc_alloc() && req.affiliation() == OLD_GENERATION, "Must be gc alloc request in old gen");
+        assert(!ShenandoahHeapRegion::requires_humongous(req.size()), "Not allow to allocate humongous in OldCollector partition");
         break;
       default:
         assert(false, "Should not be here");
@@ -165,15 +167,16 @@ public:
   ShenandoahCollectorAllocator(ShenandoahFreeSet* free_set);
 };
 
-// Currently ShenandoahOldCollectorAllocator delegate allocation handling to ShenandoahFreeSet,
-// because of the complexity in plab allocation where we have specialized logic to handle card table size alignment.
-// We will make ShenandoahOldCollectorAllocator use compare-and-swap/atomic operation later.
+// Allocator for old generation evacuation and promotion.
+// Uses lock-free CAS-based allocation with special handling for:
+// - Card table registration (lock-free for PLABs, locked for shared allocations)
+// - PLAB alignment on card boundaries
+// - Promotion accounting
 class ShenandoahOldCollectorAllocator : public ShenandoahAllocator<ShenandoahFreeSetPartitionId::OldCollector> {
 public:
   ShenandoahOldCollectorAllocator(ShenandoahFreeSet* free_set);
-  // Overrides ShenandoahAllocator::allocate function for OldCollector partition.
-  // It delegates allocation work to ShenandoahFreeSet::allocate_for_collector,
-  // in addition, after allocation it handles plab and remembered set related works which are needed only for old gen.
+  
+  // Overrides to handle old generation specific requirements
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region) override;
 };
 

@@ -29,6 +29,7 @@
 
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 
+#include "gc/shared/cardTable.hpp"
 #include "gc/shared/plab.hpp"
 #include "gc/shenandoah/shenandoahGenerationalHeap.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
@@ -228,6 +229,64 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
       retire_checker._remnant_free_words = free_words;
       log_trace(gc, free)("Failed to shrink TLAB or GCLAB request (%zu) in region %zu to %zu"
                           " because min_size() is %zu", req.size(), index(), adjusted_size, req.min_size());
+      return nullptr;
+    }
+  }
+}
+
+HeapWord* ShenandoahHeapRegion::allocate_plab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size, bool &ready_for_retire) {
+  assert(req.type() == ShenandoahAllocRequest::_alloc_plab, "Only for PLAB allocation");
+  assert(is_old(), "PLABs are only for old generation");
+  
+  ShenandoahHeapRegionReadyForRetireChecker retire_checker(ready_for_retire);
+  HeapWord* obj = atomic_top();
+  if (obj == nullptr) {
+    return nullptr;
+  }
+  
+  const size_t alignment_in_bytes = CardTable::card_size();
+  const size_t alignment_in_words = alignment_in_bytes / HeapWordSize;
+  
+  for (;/*Always return in the loop*/;) {
+    // Calculate aligned address
+    HeapWord* aligned_obj = (HeapWord*) align_up(obj, alignment_in_bytes);
+    size_t pad_words = aligned_obj - obj;
+    
+    // Ensure padding meets minimum fill size
+    if (pad_words > 0 && pad_words < ShenandoahHeap::min_fill_size()) {
+      pad_words += alignment_in_words;
+      aligned_obj += alignment_in_words;
+    }
+    
+    // Calculate available space and adjust size
+    size_t available = pointer_delta(end(), aligned_obj);
+    size_t adjusted_size = align_down(MIN2(req.size(), available), alignment_in_words);
+    
+    if (adjusted_size < req.min_size()) {
+      retire_checker._remnant_free_words = pointer_delta(end(), obj);
+      return nullptr;
+    }
+    
+    // Try to allocate including padding
+    HeapWord* new_top = aligned_obj + adjusted_size;
+    HeapWord* prior_top;
+    if ((prior_top = AtomicAccess::cmpxchg(&_atomic_top, obj, new_top, memory_order_release)) == obj) {
+      // Success! Fill padding if needed
+      if (pad_words > 0) {
+        ShenandoahHeap::fill_with_object(obj, pad_words);
+        // Padding object will be registered by caller along with the PLAB
+      }
+      
+      reset_age();
+      actual_size = adjusted_size;
+      adjust_alloc_metadata(req, adjusted_size);
+      retire_checker._remnant_free_words = pointer_delta(end(), new_top);
+      return aligned_obj;
+    }
+    
+    // CAS failed, retry with new top
+    obj = prior_top;
+    if (obj == nullptr) {
       return nullptr;
     }
   }

@@ -420,56 +420,67 @@ ShenandoahCollectorAllocator::ShenandoahCollectorAllocator(ShenandoahFreeSet* fr
   ShenandoahAllocator(static_cast<uint>(ShenandoahCollectorAllocRegions), free_set, false) { }
 
 ShenandoahOldCollectorAllocator::ShenandoahOldCollectorAllocator(ShenandoahFreeSet* free_set) :
-  ShenandoahAllocator(0u, free_set, false) { }
+  ShenandoahAllocator(static_cast<uint>(ShenandoahCollectorAllocRegions), free_set, false) { }
 
 HeapWord* ShenandoahOldCollectorAllocator::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
-  shenandoah_assert_not_heaplocked();
 #ifdef ASSERT
   verify(req);
-#endif // ASSERT
-  ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock(), _yield_to_safepoint);
-  // Make sure the old generation has room for either evacuations or promotions before trying to allocate.
+#endif
+  
+  // Check if old generation can accommodate this allocation
   auto old_gen = ShenandoahHeap::heap()->old_generation();
-  if (!old_gen->can_allocate(req)) {
-    return nullptr;
+  auto req_bytes = req.size() * HeapWordSize;
+  bool promotion_budget_claimed = true;
+  if (req.is_promotion() || req.is_lab_alloc()) {
+    promotion_budget_claimed = old_gen->claim_promotion_budget(req_bytes);
   }
 
-  HeapWord* obj = _free_set->allocate_for_collector(req, in_new_region);
-  // Record the plab configuration for this result and register the object.
+  if (!promotion_budget_claimed) {
+    // If it is promotion alloc request, but it failed to claim the promotion budget,
+    // we can't promote the object, the object will be evacuated instead.
+    if (req.is_promotion()) {
+      return nullptr;
+    }
+    // The promotion reserve cannot accommodate this plab request. Check if we still have room for
+    // evacuations. Note that we cannot really know how much of the plab will be used for evacuations,
+    // so here we only check that some evacuation reserve still exists.
+    if (req.is_lab_alloc() && old_gen->get_evacuation_reserve() <= 0) {
+      return nullptr;
+    }
+  }
+
+  HeapWord* obj = attempt_allocation(req, in_new_region);
   if (obj != nullptr) {
     if (req.is_lab_alloc()) {
-      old_gen->configure_plab_for_current_thread(req);
-    } else {
-      // Register the newly allocated object while we're holding the global lock since there's no synchronization
-      // built in to the implementation of register_object().  There are potential races when multiple independent
-      // threads are allocating objects, some of which might span the same card region.  For example, consider
-      // a card table's memory region within which three objects are being allocated by three different threads:
-      //
-      // objects being "concurrently" allocated:
-      //    [-----a------][-----b-----][--------------c------------------]
-      //            [---- card table memory range --------------]
-      //
-      // Before any objects are allocated, this card's memory range holds no objects.  Note that allocation of object a
-      // wants to set the starts-object, first-start, and last-start attributes of the preceding card region.
-      // Allocation of object b wants to set the starts-object, first-start, and last-start attributes of this card region.
-      // Allocation of object c also wants to set the starts-object, first-start, and last-start attributes of this
-      // card region.
-      //
-      // The thread allocating b and the thread allocating c can "race" in various ways, resulting in confusion, such as
-      // last-start representing object b while first-start represents object c.  This is why we need to require all
-      // register_object() invocations to be "mutually exclusive" with respect to each card's memory range.
-      old_gen->card_scan()->register_object(obj);
-
-      if (req.is_promotion()) {
-        // Shared promotion.
-        const size_t actual_size = req.actual_size() * HeapWordSize;
-        log_debug(gc, plab)("Expend shared promotion of %zu bytes", actual_size);
-        old_gen->expend_promoted(actual_size);
+      old_gen->card_scan()->register_object_without_lock(obj);
+      Thread* thread = Thread::current();
+      ShenandoahThreadLocalData::reset_plab_promoted(thread);
+      size_t const actual_bytes = req.actual_size() * HeapWordSize;
+      if (promotion_budget_claimed && (actual_bytes == req_bytes || old_gen->claim_promotion_budget(actual_bytes - req_bytes))) {
+          // Assume the entirety of this PLAB will be used for promotion.  This prevents promotion from overreach.
+          // When we retire this plab, we'll unexpend what we don't really use.
+          log_debug(gc, plab)("Thread can promote using PLAB of %zu bytes. Expended: %zu, available: %zu",
+                              actual_bytes, old_gen->get_promoted_expended(), old_gen->get_promoted_reserve());
+          ShenandoahThreadLocalData::enable_plab_promotions(thread);
+          ShenandoahThreadLocalData::set_plab_actual_size(thread, actual_bytes);
+      } else {
+        // Disable promotions in this thread because entirety of this PLAB must be available to hold old-gen evacuations.
+        ShenandoahThreadLocalData::disable_plab_promotions(thread);
+        ShenandoahThreadLocalData::set_plab_actual_size(thread, 0);
+        if (promotion_budget_claimed) {
+          // Current thread will not use the plab for promotion, so we need to return the claimed budget.
+          old_gen->unexpend_promoted(req_bytes);
+        }
+        log_debug(gc, plab)("Thread cannot promote using PLAB of %zu bytes. Expended: %zu, available: %zu, mixed evacuations? %s",
+                            actual_bytes, old_gen->get_promoted_expended(), old_gen->get_promoted_reserve(), BOOL_TO_STR(ShenandoahHeap::heap()->collection_set()->has_old_regions()));
       }
+    } else {
+      ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
+      old_gen->card_scan()->register_object(obj);
     }
-
-    return obj;
+  } else if (promotion_budget_claimed && (req.is_promotion() || req.is_lab_alloc())) {
+    // return the claimed promotion budget when fails to allocate memory after claiming promotion budget.
+    old_gen->unexpend_promoted(req_bytes);
   }
-
-  return nullptr;
+  return obj;
 }

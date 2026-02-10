@@ -389,6 +389,10 @@ void ShenandoahDegenGC::op_prepare_evacuation() {
       // Reserve alloc regions for evacuation.
       ShenandoahHeapLocker locker(heap->lock());
       heap->free_set()->collector_allocator()->reserve_alloc_regions();
+      // Reserve old collector alloc regions if doing mixed evacuations
+      if (heap->mode()->is_generational() && heap->old_generation()->is_doing_mixed_evacuations()) {
+        heap->free_set()->old_collector_allocator()->reserve_alloc_regions();
+      }
     }
   }
 }

@@ -67,6 +67,13 @@ void ShenandoahScanRemembered::process_clusters(size_t first_cluster, size_t cou
   // clip at end_of_range (exclusive)
   HeapWord* end_addr = MIN2(end_of_range, (HeapWord*)start_addr + (count * ShenandoahCardCluster::CardsPerCluster
                                                                    * CardTable::card_size_in_words()));
+  const ShenandoahHeapRegion* region = ShenandoahHeap::heap()->heap_region_containing(start_addr);
+
+  if (!region->has_allocs()) {
+    assert(region->is_atomic_alloc_region(), "must be");
+    return;
+  }
+
   assert(start_addr < end_addr, "Empty region?");
 
   const size_t whole_cards = (end_addr - start_addr + CardTable::card_size_in_words() - 1)/CardTable::card_size_in_words();
@@ -92,7 +99,6 @@ void ShenandoahScanRemembered::process_clusters(size_t first_cluster, size_t cou
 
   // The region we will scan is the half-open interval [start_addr, end_addr),
   // and lies entirely within a single region.
-  const ShenandoahHeapRegion* region = ShenandoahHeap::heap()->heap_region_containing(start_addr);
   assert(region->contains(end_addr - 1), "Slice shouldn't cross regions");
 
   // This code may have implicit assumptions of examining only old gen regions.

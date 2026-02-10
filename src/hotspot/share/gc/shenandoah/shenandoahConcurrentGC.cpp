@@ -1105,6 +1105,10 @@ void ShenandoahConcurrentGC::op_evacuate() {
     ShenandoahHeapLocker locker(heap->lock());
     // Reserve alloc regions for evacuation.
     heap->free_set()->collector_allocator()->reserve_alloc_regions();
+    // Reserve old collector alloc regions in generational mode
+    if (heap->mode()->is_generational()) {
+      heap->free_set()->old_collector_allocator()->reserve_alloc_regions();
+    }
   }
   ShenandoahHeap::heap()->evacuate_collection_set(_generation, true /*concurrent*/);
 }

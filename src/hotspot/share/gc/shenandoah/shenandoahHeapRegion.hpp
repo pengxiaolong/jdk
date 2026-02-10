@@ -390,6 +390,10 @@ public:
 
   inline HeapWord* allocate_lab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size, bool &ready_for_retire);
 
+  // Atomic allocation for PLAB with card-size alignment (for old generation)
+  // Returns nullptr if unable to satisfy alignment or size requirements
+  inline HeapWord* allocate_plab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size, bool &ready_for_retire);
+
   // Use AtomicAccess::cmpxchg to allocate the object,
   // prior value of _atomic_top will be always written to reference prior_atomic_top.
   inline bool try_allocate(HeapWord* const obj, size_t const size, HeapWord* &prior_atomic_top);

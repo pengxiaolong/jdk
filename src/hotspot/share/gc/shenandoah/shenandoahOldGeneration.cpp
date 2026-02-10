@@ -158,6 +158,24 @@ size_t ShenandoahOldGeneration::expend_promoted(size_t increment) {
   return _promoted_expended.add_then_fetch(increment);
 }
 
+bool ShenandoahOldGeneration::claim_promotion_budget(size_t promotion_size) {
+  size_t const promoted_reserve = get_promoted_expended();
+  size_t promoted_expended = _promoted_expended.load_relaxed();
+
+  if (promoted_expended + promotion_size > promoted_reserve) {
+    return false;
+  }
+  do {
+    size_t previous_value = _promoted_expended.compare_exchange(promoted_expended, promoted_expended + promotion_size, memory_order_relaxed);
+    if (previous_value == promoted_expended) {
+      return true;
+    }
+    promoted_expended = previous_value;
+  } while (promoted_expended + promotion_size > promoted_reserve);
+
+  return false;
+}
+
 size_t ShenandoahOldGeneration::unexpend_promoted(size_t decrement) {
   return _promoted_expended.sub_then_fetch(decrement);
 }

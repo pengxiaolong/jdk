@@ -119,6 +119,8 @@ public:
   // This is incremented when allocations are made to copy promotions into the old generation
   size_t expend_promoted(size_t increment);
 
+  bool claim_promotion_budget(size_t promotion_size);
+
   // This is used to return unused memory from a retired promotion LAB
   size_t unexpend_promoted(size_t decrement);
 

@@ -868,6 +868,7 @@ public:
   void release_alloc_regions(bool should_update_accounting = true) {
     mutator_allocator()->release_alloc_regions(should_update_accounting);
     collector_allocator()->release_alloc_regions(should_update_accounting);
+    old_collector_allocator()->release_alloc_regions(should_update_accounting);
   }
 
   void release_alloc_regions_under_lock(bool should_update_accounting = true) {
