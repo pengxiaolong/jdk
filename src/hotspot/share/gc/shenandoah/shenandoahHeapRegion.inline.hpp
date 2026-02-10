@@ -394,8 +394,8 @@ inline void ShenandoahHeapRegion::set_update_watermark(HeapWord* w) {
 inline void ShenandoahHeapRegion::concurrent_set_update_watermark(HeapWord* w) {
   assert(bottom() <= w && w <= top(), "within bounds");
   HeapWord* watermark = nullptr;
-  while ((watermark = AtomicAccess::load(&_update_watermark)) < w) {
-    if (AtomicAccess::cmpxchg(&_update_watermark, watermark, w, memory_order_release) == watermark) {
+  while ((watermark = _update_watermark.load_acquire()) < w) {
+    if (_update_watermark.compare_exchange(watermark, w, memory_order_release) == watermark) {
       return;
     }
   }
