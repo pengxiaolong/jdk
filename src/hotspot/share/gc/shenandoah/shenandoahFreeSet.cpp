@@ -3216,6 +3216,14 @@ int ShenandoahFreeSet::reserve_alloc_regions_internal(Iter iterator, int const r
     }
   }
 
+  if (reserved_regions_count == 0 && ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+    ShenandoahHeapRegion* r = steal_heap_region_from_mutator_for_allocation<ALLOC_PARTITION>();
+    if (r != nullptr) {
+      assert(membership(r->index()) == ALLOC_PARTITION, "Must be");
+      reserved_regions[reserved_regions_count++] = r;
+    }
+  }
+
   if (reserved_regions_count == 0) {
     return 0;
   }
