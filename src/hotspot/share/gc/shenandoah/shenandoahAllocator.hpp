@@ -53,11 +53,13 @@ protected:
   uint const                         _alloc_region_count;
   bool const                         _yield_to_safepoint;
 
-  //Fields often get updated
-  shenandoah_padding(0);
-  volatile uint32_t                  _epoch_id = 0u; // epoch id of _alloc_regions, increase by 1 whenever refresh _alloc_regions.
-  shenandoah_padding(1);
   ShenandoahAllocRegion              _alloc_regions[MAX_ALLOC_REGION_COUNT];
+  shenandoah_padding(0);
+  //Fields often get updated
+  volatile uint32_t                  _epoch_id = 0u;   // epoch id of _alloc_regions, increase by 1 whenever refresh _alloc_regions.
+  shenandoah_padding(1);
+  Atomic<size_t>                     _remaining_bytes; // _remaining_bytes tracks the remaining of all share alloc regions.
+  shenandoah_padding(2);
 
 
   // Start index of the shared alloc regions where the allocation will start from.
@@ -147,6 +149,8 @@ public:
   // by removing these regions from the relevant ShenandoahFreeSet partitions.
   // Collector calls this after rebuilding the freeset.
   virtual void reserve_alloc_regions();
+
+  virtual size_t remaining_bytes();
 };
 
 // Allocator impl for mutator:
