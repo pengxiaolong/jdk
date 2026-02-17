@@ -422,7 +422,6 @@ void ShenandoahAllocator<ALLOC_PARTITION>::reserve_alloc_regions() {
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 size_t ShenandoahAllocator<ALLOC_PARTITION>::remaining_bytes() {
   const size_t remaining = _remaining_bytes.load_relaxed();
-  assert(remaining >= 0, "Must be");
   return remaining;
 }
 
