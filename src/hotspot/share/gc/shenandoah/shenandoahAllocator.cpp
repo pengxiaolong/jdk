@@ -34,7 +34,7 @@
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 ShenandoahAllocator<ALLOC_PARTITION>::ShenandoahAllocator(uint const alloc_region_count, ShenandoahFreeSet* free_set, bool yield_to_safepoint):
-  _free_set(free_set), _alloc_partition_name(ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION)), _alloc_region_count(alloc_region_count), _yield_to_safepoint(yield_to_safepoint), _remaining_bytes(0) {
+  _free_set(free_set), _alloc_partition_name(ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION)), _alloc_region_count(alloc_region_count), _yield_to_safepoint(yield_to_safepoint) {
   if (alloc_region_count > 0) {
     for (uint i = 0; i < alloc_region_count; i++) {
       _alloc_regions[i].address = nullptr;
@@ -258,7 +258,6 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::allocate_in(ShenandoahHeapRegion
     log_debug(gc, alloc)("%sAllocator: Allocated %lu bytes from heap region %lu, request size: %lu, alloc region: %s, remnant: %lu",
       _alloc_partition_name, actual_size * HeapWordSize, region->index(), req.size() * HeapWordSize, is_alloc_region ? "true" : "false", region->free());
     req.set_actual_size(actual_size);
-    _remaining_bytes.fetch_then_sub(actual_size * HeapWordSize, memory_order_relaxed);
     in_new_region = obj == region->bottom(); // is in new region when the allocated object is at the bottom of the region.
     if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       // For GC allocations, we advance update_watermark because the objects relocated into this memory during
@@ -292,7 +291,6 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
   int refreshable_alloc_regions = 0;
   ShenandoahAllocRegion* refreshable[MAX_ALLOC_REGION_COUNT];
   // Step 1: find out the alloc regions which are ready to refresh.
-  size_t total_bytes_waste = 0;
   for (uint i = 0; i < _alloc_region_count; i++) {
     ShenandoahAllocRegion* alloc_region = &_alloc_regions[i];
     ShenandoahHeapRegion* region = alloc_region->address;
@@ -300,7 +298,6 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
     if (region == nullptr || free_bytes / HeapWordSize < PLAB::min_size()) {
       if (region != nullptr) {
         region->unset_active_alloc_region();
-        total_bytes_waste += region->free();
         log_debug(gc, alloc)("%sAllocator: Removing heap region %li from alloc region %i.",
           _alloc_partition_name, region->index(), alloc_region->alloc_region_index);
         AtomicAccess::store(&alloc_region->address, static_cast<ShenandoahHeapRegion*>(nullptr));
@@ -309,10 +306,6 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
         _alloc_partition_name, alloc_region->alloc_region_index);
       refreshable[refreshable_alloc_regions++] = alloc_region;
     }
-  }
-
-  if (total_bytes_waste > 0) {
-    _remaining_bytes.fetch_then_sub(total_bytes_waste);
   }
 
   if (refreshable_alloc_regions > 0) {
@@ -325,16 +318,11 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
     ShenandoahAffiliation affiliation = ALLOC_PARTITION == ShenandoahFreeSetPartitionId::OldCollector ? OLD_GENERATION : YOUNG_GENERATION;
     // Step 3: Install the new reserved alloc regions
     if (reserved_regions > 0) {
-      size_t total_bytes_reserved = 0;
       for (int i = 0; i < reserved_regions; i++) {
         assert(reserved[i]->affiliation() == affiliation, "Affiliation of reserved region must match, invalid affiliation: %s", shenandoah_affiliation_name(reserved[i]->affiliation()));
         assert(_free_set->membership(reserved[i]->index()) == ShenandoahFreeSetPartitionId::NotFree, "Reserved heap region must have been retired from free set.");
-        total_bytes_reserved += reserved[i]->free();
         if (satisfy_alloc_req_first && reserved[i]->free_words() >= min_req_size) {
           bool ready_for_retire = false;
-          // Add total_bytes_reserved to _remaining_bytes avoid negative value after allocate_in call
-          _remaining_bytes.fetch_then_add(total_bytes_reserved);
-          total_bytes_reserved = 0;
           *obj = allocate_in<false>(reserved[i], true, *req, *in_new_region, ready_for_retire);
           assert(*obj != nullptr, "Should always succeed");
           satisfy_alloc_req_first = false;
@@ -346,9 +334,6 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
         log_debug(gc, alloc)("%sAllocator: Storing heap region %li to alloc region %i",
           _alloc_partition_name, reserved[i]->index(), refreshable[i]->alloc_region_index);
         AtomicAccess::store(&refreshable[i]->address, reserved[i]);
-      }
-      if (total_bytes_reserved > 0) {
-        _remaining_bytes.fetch_then_add(total_bytes_reserved);
       }
 
       // Increase _epoch_id by 1 when any of alloc regions has been refreshed.
@@ -400,7 +385,6 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
     assert(alloc_region.address == nullptr, "Alloc region is set to nullptr after release");
   }
   if (total_regions_to_unretire > 0) {
-    _remaining_bytes.fetch_then_sub(total_free_bytes, memory_order_relaxed);
     if (ALLOC_PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
       _free_set->increase_bytes_allocated(-total_free_bytes);
     }
@@ -421,8 +405,14 @@ void ShenandoahAllocator<ALLOC_PARTITION>::reserve_alloc_regions() {
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 size_t ShenandoahAllocator<ALLOC_PARTITION>::remaining_bytes() {
-  const size_t remaining = _remaining_bytes.load_relaxed();
-  return remaining;
+  size_t remaining_bytes = 0;
+  for (uint i = 0; i < _alloc_region_count; i++) {
+    ShenandoahHeapRegion* r = _alloc_regions[i].address;
+    if (r != nullptr) {
+      remaining_bytes += _alloc_regions[i].address->free();
+    }
+  }
+  return remaining_bytes;
 }
 
 ShenandoahMutatorAllocator::ShenandoahMutatorAllocator(ShenandoahFreeSet* free_set) :

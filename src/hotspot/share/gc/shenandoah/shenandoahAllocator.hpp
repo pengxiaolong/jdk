@@ -58,9 +58,6 @@ protected:
   //Fields often get updated
   volatile uint32_t                  _epoch_id = 0u;   // epoch id of _alloc_regions, increase by 1 whenever refresh _alloc_regions.
   shenandoah_padding(1);
-  Atomic<size_t>                     _remaining_bytes; // _remaining_bytes tracks the remaining of all share alloc regions.
-  shenandoah_padding(2);
-
 
   // Start index of the shared alloc regions where the allocation will start from.
   // The alloc start index is stored in thread local data, each thread has it own start index to reduce contention.
@@ -150,6 +147,7 @@ public:
   // Collector calls this after rebuilding the freeset.
   virtual void reserve_alloc_regions();
 
+  // Return the total remaining bytes from all alloc regions.
   virtual size_t remaining_bytes();
 };
 
