@@ -134,22 +134,11 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation(ShenandoahAll
   uint32_t old_epoch_id = AtomicAccess::load(&_epoch_id);
   // Fast path: start the attempt to allocate in alloc regions right away
   HeapWord* obj = attempt_allocation_in_alloc_regions(req, in_new_region, alloc_start_index(), regions_ready_for_refresh);
-  if (obj != nullptr && regions_ready_for_refresh < _alloc_region_count / 2) {
+  if (obj != nullptr) {
     return obj;
   }
-  if (obj == nullptr) {
-    // Slow path under heap lock
-    obj = attempt_allocation_slow(req, in_new_region, regions_ready_for_refresh, old_epoch_id);
-  } else {
-    // Eagerly refresh alloc regions if there are 50% or more of alloc regions ready for retire.
-    // While holding uninitialized new object, the thread MUST NOT yield to safepoint.
-    ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock(), false);
-    ShenandoahHeapAccountingUpdater accounting_updater(_free_set, ALLOC_PARTITION);
-    if (_epoch_id == old_epoch_id) {
-      accounting_updater._need_update = refresh_alloc_regions() > 0;
-    }
-  }
-  return obj;
+  // Slow path under heap lock
+  return attempt_allocation_slow(req, in_new_region, regions_ready_for_refresh, old_epoch_id);
 }
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
@@ -161,7 +150,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_slow(Shenando
     // if alloc regions have been refreshed by other thread while current thread waits to take heap lock.
     regions_ready_for_refresh = 0u; //reset regions_ready_for_refresh to 0.
     obj = attempt_allocation_in_alloc_regions<true /*holding heap lock*/>(req, in_new_region, alloc_start_index(), regions_ready_for_refresh);
-    if (obj != nullptr && regions_ready_for_refresh == 0) {
+    if (obj != nullptr) {
       return obj;
     }
   }
@@ -169,15 +158,12 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_slow(Shenando
   ShenandoahHeapAccountingUpdater accounting_updater(_free_set, ALLOC_PARTITION);
   // Eagerly refresh alloc regions if any is ready for refresh since it is already holding the heap lock.
   if (regions_ready_for_refresh > 0u) {
-    if (obj == nullptr) {
-      if (const int refreshed = refresh_alloc_regions(&req, &in_new_region, &obj); refreshed > 0 || obj != nullptr) {
-        accounting_updater._need_update = true;
+    const int refreshed = refresh_alloc_regions(&req, &in_new_region, &obj);
+    if (refreshed > 0) {
+      accounting_updater._need_update = true;
+      if (obj != nullptr) {
+        return obj;
       }
-    } else {
-      accounting_updater._need_update = refresh_alloc_regions() > 0;
-    }
-    if (obj != nullptr) {
-      return obj;
     }
   }
 
