@@ -409,7 +409,7 @@ size_t ShenandoahAllocator<ALLOC_PARTITION>::remaining_bytes() {
   for (uint i = 0; i < _alloc_region_count; i++) {
     ShenandoahHeapRegion* r = _alloc_regions[i].address;
     if (r != nullptr) {
-      remaining_bytes += _alloc_regions[i].address->free();
+      remaining_bytes += r->free();
     }
   }
   return remaining_bytes;
