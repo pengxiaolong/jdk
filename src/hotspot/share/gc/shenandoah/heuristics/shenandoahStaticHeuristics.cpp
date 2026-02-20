@@ -40,7 +40,7 @@ ShenandoahStaticHeuristics::ShenandoahStaticHeuristics(ShenandoahSpaceInfo* spac
 bool ShenandoahStaticHeuristics::should_start_gc() {
   size_t capacity = ShenandoahHeap::heap()->soft_max_capacity();
   size_t available = _space_info->soft_mutator_available();
-  size_t allocated = _space_info->bytes_allocated_since_gc_start();
+  size_t allocated = _space_info->bytes_allocated_since_gc_start_under_lock();
 
   log_debug(gc, ergo)("should_start_gc calculation: available: " PROPERFMT ", soft_max_capacity: "  PROPERFMT ", "
                 "allocated_since_gc_start: "  PROPERFMT,

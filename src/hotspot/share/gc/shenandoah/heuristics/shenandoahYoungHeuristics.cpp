@@ -175,6 +175,7 @@ bool ShenandoahYoungHeuristics::should_start_gc() {
 // generation at the end of the current cycle (as represented by young_regions_to_be_reclaimed) and on the anticipated
 // amount of time required to perform a GC.
 size_t ShenandoahYoungHeuristics::bytes_of_allocation_runway_before_gc_trigger(size_t young_regions_to_be_reclaimed) {
+  shenandoah_assert_heaplocked();
   size_t capacity = _space_info->max_capacity();
   size_t usage = _space_info->used();
   size_t available = (capacity > usage)? capacity - usage: 0;

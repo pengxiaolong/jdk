@@ -46,6 +46,13 @@ public:
   // in time within each GC cycle.  For certain GC cycles, the value returned may include some bytes allocated before
   // the start of the current GC cycle.
   virtual size_t bytes_allocated_since_gc_start() const = 0;
+
+  size_t bytes_allocated_since_gc_start_under_lock() const {
+    shenandoah_assert_not_heaplocked();
+    ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
+    return bytes_allocated_since_gc_start();
+  }
+
 };
 
 #endif //SHARE_GC_SHENANDOAH_HEURISTICS_SHENANDOAHSPACEINFO_HPP
