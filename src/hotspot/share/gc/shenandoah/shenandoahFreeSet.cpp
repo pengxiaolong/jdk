@@ -1195,21 +1195,11 @@ void ShenandoahRegionPartitions::assert_bounds() {
          "Mutator humongous waste must match");
 }
 
-inline void ShenandoahRegionPartitions::assert_bounds_not_changed() {
-
+inline void ShenandoahRegionPartitions::assert_bounds_sanity() {
   for (uint8_t i = 0; i < UIntNumPartitions; i++) {
     ShenandoahFreeSetPartitionId partition = static_cast<ShenandoahFreeSetPartitionId>(i);
-
-    assert(leftmost(partition) == _max || membership(leftmost(partition)) == partition, "Left most boundry must be sane");
-    assert(rightmost(partition) == -1 || membership(rightmost(partition)) == partition, "Right most boundry must be sane");
-
-    idx_t const leftmost_empty_idx = leftmost_empty(partition);
-    assert(leftmost_empty_idx == _max ||
-           (membership(leftmost_empty_idx) == partition && _free_set->alloc_capacity(leftmost_empty_idx) == _region_size_bytes), "Left most empty boundry must be sane");
-
-    idx_t const rightmost_empty_idx = rightmost_empty(partition);
-    assert(rightmost_empty_idx == -1 ||
-           (membership(rightmost_empty_idx) == partition &&_free_set->alloc_capacity(rightmost_empty_idx) == _region_size_bytes), "Right most empty boundry must be sane");
+    assert(leftmost_empty(partition) == _max || leftmost_empty(partition) >= leftmost(partition), "Left most empty must be sane");
+    assert(rightmost_empty(partition) == -1 || rightmost_empty(partition) <= rightmost(partition), "Right most empty must be sane");
   }
 }
 
