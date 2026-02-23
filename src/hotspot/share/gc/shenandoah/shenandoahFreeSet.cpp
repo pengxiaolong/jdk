@@ -1726,7 +1726,7 @@ HeapWord* ShenandoahFreeSet::try_allocate_in(ShenandoahHeapRegion* r, Shenandoah
   if (boundary_changed) {
     _partitions.assert_bounds();
   } else {
-    _partitions.assert_bounds_not_changed();
+    _partitions.assert_bounds_sanity();
   }
 #endif
   return result;
