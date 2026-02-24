@@ -1198,6 +1198,9 @@ void ShenandoahRegionPartitions::assert_bounds() {
 inline void ShenandoahRegionPartitions::assert_bounds_sanity() {
   for (uint8_t i = 0; i < UIntNumPartitions; i++) {
     ShenandoahFreeSetPartitionId partition = static_cast<ShenandoahFreeSetPartitionId>(i);
+    assert(leftmost(partition) == _max || membership(leftmost(partition)) == partition, "Left most boundry must be sane");
+    assert(rightmost(partition) == -1 || membership(rightmost(partition)) == partition, "Right most boundry must be sane");
+
     assert(leftmost_empty(partition) == _max || leftmost_empty(partition) >= leftmost(partition), "Left most empty must be sane");
     assert(rightmost_empty(partition) == -1 || rightmost_empty(partition) <= rightmost(partition), "Right most empty must be sane");
   }
