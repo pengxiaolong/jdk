@@ -1666,7 +1666,7 @@ void ShenandoahHeap::verify(VerifyOption vo) {
   }
 }
 size_t ShenandoahHeap::tlab_capacity() const {
-  return _free_set->capacity();
+  return _free_set->capacity_not_holding_lock();
 }
 
 class ObjectIterateScanRootClosure : public BasicOopIterateClosure {
@@ -2141,7 +2141,7 @@ GCTracer* ShenandoahHeap::tracer() {
 }
 
 size_t ShenandoahHeap::tlab_used() const {
-  return _free_set->used();
+  return _free_set->used_not_holding_lock();
 }
 
 bool ShenandoahHeap::try_cancel_gc(GCCause::Cause cause) {
@@ -2838,7 +2838,7 @@ void ShenandoahHeap::log_heap_status(const char* msg) const {
 ShenandoahHeapLocker::ShenandoahHeapLocker(ShenandoahHeapLock* lock, bool allow_block_for_safepoint) : _lock(lock) {
 #ifdef ASSERT
   ShenandoahFreeSet* free_set = ShenandoahHeap::heap()->free_set();
-  // free_set is nullptr only at pre-initilization state
+  // free_set is nullptr only at pre-initialized state
   assert(free_set == nullptr || !free_set->rebuild_lock()->owned_by_self(), "Dead lock, can't acquire heap lock while holding free-set rebuild lock");
   assert(_lock != nullptr, "Must not");
 #endif
