@@ -44,8 +44,8 @@ public:
   static constexpr uint             MAX_ALLOC_REGION_COUNT = 128;
 protected:
   struct ShenandoahAllocRegion {
-    ShenandoahHeapRegion* volatile  address;
-    int                             alloc_region_index;
+    Atomic<ShenandoahHeapRegion*> address;
+    int                           alloc_region_index;
   };
   // Fields won't change during VM life cycle
   ShenandoahFreeSet* const           _free_set;
@@ -54,10 +54,8 @@ protected:
   bool const                         _yield_to_safepoint;
 
   //Fields often get updated
-  shenandoah_padding(0);
-  volatile uint32_t                  _epoch_id = 0u; // epoch id of _alloc_regions, increase by 1 whenever refresh _alloc_regions.
-  shenandoah_padding(1);
   ShenandoahAllocRegion              _alloc_regions[MAX_ALLOC_REGION_COUNT];
+  Atomic<uint32_t>                   _epoch_id; // epoch id of _alloc_regions, increase by 1 whenever refresh _alloc_regions.
 
 
   // Start index of the shared alloc regions where the allocation will start from.
