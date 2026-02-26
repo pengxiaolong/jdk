@@ -396,7 +396,7 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
   }
 
   if (total_bytes_unused > 0) {
-    _free_set->increase_bytes_allocated(total_bytes_unused);
+    _free_set->decrease_bytes_allocated(total_bytes_unused);
   }
 }
 

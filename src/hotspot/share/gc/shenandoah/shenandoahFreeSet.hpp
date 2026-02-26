@@ -679,6 +679,8 @@ public:
 
   void increase_bytes_allocated(size_t bytes);
 
+  void decrease_bytes_allocated(size_t bytes);
+
   inline size_t get_bytes_allocated_since_gc_start() const {
     return _mutator_bytes_allocated_since_gc_start;
   }

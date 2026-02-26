@@ -306,6 +306,11 @@ void ShenandoahFreeSet::increase_bytes_allocated(size_t bytes) {
   _mutator_bytes_allocated_since_gc_start += bytes;
 }
 
+void ShenandoahFreeSet::decrease_bytes_allocated(size_t bytes) {
+  shenandoah_assert_heaplocked();
+  _mutator_bytes_allocated_since_gc_start += bytes;
+}
+
 inline idx_t ShenandoahRegionPartitions::leftmost(ShenandoahFreeSetPartitionId which_partition) const {
   assert (which_partition < NumPartitions, "selected free partition must be valid");
   idx_t idx = _leftmosts[int(which_partition)];
