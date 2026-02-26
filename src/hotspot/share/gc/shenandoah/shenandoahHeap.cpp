@@ -2258,13 +2258,15 @@ void ShenandoahHeap::reset_bytes_allocated_since_gc_start() {
   ShenandoahHeapLocker locker(lock());
   size_t unaccounted_bytes;
   size_t bytes_allocated = _free_set->get_bytes_allocated_since_gc_start();
+  size_t mutator_allocator_remaining_bytes = _free_set->mutator_allocator()->remaining_bytes();
+  size_t actual_allocated = bytes_allocated - mutator_allocator_remaining_bytes;
   if (mode()->is_generational()) {
-    unaccounted_bytes = young_generation()->heuristics()->force_alloc_rate_sample(bytes_allocated);
+    unaccounted_bytes = young_generation()->heuristics()->force_alloc_rate_sample(actual_allocated);
   } else {
     // Single-gen Shenandoah uses global heuristics.
-    unaccounted_bytes = heuristics()->force_alloc_rate_sample(bytes_allocated);
+    unaccounted_bytes = heuristics()->force_alloc_rate_sample(actual_allocated);
   }
-  _free_set->reset_bytes_allocated_since_gc_start(unaccounted_bytes);
+  _free_set->reset_bytes_allocated_since_gc_start(unaccounted_bytes + mutator_allocator_remaining_bytes);
 }
 
 void ShenandoahHeap::set_degenerated_gc_in_progress(bool in_progress) {
