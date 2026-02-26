@@ -38,13 +38,14 @@ ShenandoahStaticHeuristics::ShenandoahStaticHeuristics(ShenandoahSpaceInfo* spac
 }
 
 bool ShenandoahStaticHeuristics::should_start_gc() {
+  ShenandoahHeap* const heap = ShenandoahHeap::heap();
   size_t capacity = 0;
   size_t available = 0;
   size_t allocated = 0;
   {
-    ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
+    ShenandoahHeapLocker locker(heap->lock());
     capacity = ShenandoahHeap::heap()->soft_max_capacity();
-    available = _space_info->soft_mutator_available();
+    available = _space_info->soft_mutator_available() + heap->free_set()->mutator_allocator()->remaining_bytes();
     allocated = _space_info->bytes_allocated_since_gc_start();
   }
 
