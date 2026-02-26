@@ -232,9 +232,15 @@ static double saturate(double value, double min, double max) {
 //    in operation mode.  We want some way to decide that the average rate has changed, while keeping average
 //    allocation rate computation independent.
 bool ShenandoahAdaptiveHeuristics::should_start_gc() {
-  size_t capacity = ShenandoahHeap::heap()->soft_max_capacity();
-  size_t available = _space_info->soft_mutator_available();
-  size_t allocated = _space_info->bytes_allocated_since_gc_start();
+  size_t capacity = 0;
+  size_t available = 0;
+  size_t allocated = 0;
+  {
+    ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
+    capacity = ShenandoahHeap::heap()->soft_max_capacity();
+    available = _space_info->soft_mutator_available();
+    allocated = _space_info->bytes_allocated_since_gc_start();
+  }
 
   log_debug(gc, ergo)("should_start_gc calculation: available: " PROPERFMT ", soft_max_capacity: "  PROPERFMT ", "
                 "allocated_since_gc_start: "  PROPERFMT,

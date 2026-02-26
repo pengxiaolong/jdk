@@ -102,7 +102,7 @@ size_t ShenandoahYoungGeneration::used() const {
 
 size_t ShenandoahYoungGeneration::bytes_allocated_since_gc_start() const {
   assert(ShenandoahHeap::heap()->mode()->is_generational(), "Young implies generational");
-  return _free_set->get_bytes_allocated_since_gc_start();
+  return _free_set->get_bytes_allocated_since_gc_start() - _free_set->mutator_allocator()->remaining_bytes();
 }
 
 size_t ShenandoahYoungGeneration::get_affiliated_region_count() const {

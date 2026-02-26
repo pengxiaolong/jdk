@@ -145,6 +145,9 @@ public:
   // by removing these regions from the relevant ShenandoahFreeSet partitions.
   // Collector calls this after rebuilding the freeset.
   virtual void reserve_alloc_regions();
+
+  // Return the total remaining bytes from all alloc regions held by the allocator.
+  virtual size_t remaining_bytes();
 };
 
 // Allocator impl for mutator:

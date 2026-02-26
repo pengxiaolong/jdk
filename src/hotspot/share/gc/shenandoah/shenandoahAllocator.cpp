@@ -364,7 +364,8 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
 
   log_debug(gc, alloc)("%sAllocator: Releasing all alloc regions", _alloc_partition_name);
   ShenandoahHeapAccountingUpdater accounting_updater(_free_set, ALLOC_PARTITION);
-  size_t total_free_bytes = 0;
+  size_t total_bytes_unused = 0;
+  size_t total_bytes_to_unretire = 0;
   size_t total_regions_to_unretire = 0;
 
   for (uint i = 0; i < _alloc_region_count; i++) {
@@ -376,18 +377,26 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
       r->unset_active_alloc_region();
       alloc_region.address.store_relaxed(nullptr);;
       size_t free_bytes = r->free();
-      if (free_bytes >= PLAB::min_size_bytes()) {
-        total_free_bytes += free_bytes;
-        total_regions_to_unretire++;
-        _free_set->partitions()->unretire_to_partition(r, ALLOC_PARTITION);
+      if (free_bytes > 0u) {
+        total_bytes_unused += free_bytes;
+        if (free_bytes >= PLAB::min_size_bytes()) {
+          total_bytes_to_unretire += free_bytes;
+          total_regions_to_unretire++;
+          _free_set->partitions()->unretire_to_partition(r, ALLOC_PARTITION);
+        }
       }
     }
     assert(alloc_region.address.load_relaxed() == nullptr, "Alloc region is set to nullptr after release");
   }
+
   if (total_regions_to_unretire > 0) {
-    _free_set->partitions()->decrease_used(ALLOC_PARTITION, total_free_bytes);
+    _free_set->partitions()->decrease_used(ALLOC_PARTITION, total_bytes_to_unretire);
     _free_set->partitions()->increase_region_counts(ALLOC_PARTITION, total_regions_to_unretire);
     accounting_updater._need_update = should_update_accounting;
+  }
+
+  if (total_bytes_unused > 0) {
+    _free_set->increase_bytes_allocated(total_bytes_unused);
   }
 }
 
@@ -398,6 +407,18 @@ void ShenandoahAllocator<ALLOC_PARTITION>::reserve_alloc_regions() {
   if (refresh_alloc_regions() > 0) {
     accounting_updater._need_update = true;
   }
+}
+
+template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
+size_t ShenandoahAllocator<ALLOC_PARTITION>::remaining_bytes() {
+  size_t remaining_bytes = 0;
+  for (uint i = 0; i < _alloc_region_count; i++) {
+    ShenandoahHeapRegion* r = _alloc_regions[i].address.load_relaxed();
+    if (r != nullptr) {
+      remaining_bytes += r->free();
+    }
+  }
+  return remaining_bytes;
 }
 
 ShenandoahMutatorAllocator::ShenandoahMutatorAllocator(ShenandoahFreeSet* free_set) :
