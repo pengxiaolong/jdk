@@ -2843,7 +2843,7 @@ ShenandoahHeapLocker::ShenandoahHeapLocker(ShenandoahHeapLock* lock, bool allow_
 #ifdef ASSERT
   ShenandoahFreeSet* free_set = ShenandoahHeap::heap()->free_set();
   // free_set is nullptr only at pre-initialized state
-  assert(free_set == nullptr || !free_set->usage_accounting_lock()->owned_by_self(), "Dead lock, can't acquire heap lock while holding free-set rebuild lock");
+  assert(free_set == nullptr || !free_set->usage_accounting_lock()->owned_by_self(), "Dead lock, can't acquire heap lock while holding free-set usage accounting lock");
   assert(_lock != nullptr, "Must not");
 #endif
   _lock->lock(allow_block_for_safepoint);
