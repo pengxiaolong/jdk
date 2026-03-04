@@ -409,8 +409,9 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
   {
     ShenandoahHeapLocker locker(heap->lock());
     capacity = ShenandoahHeap::heap()->soft_max_capacity();
-    available = _space_info->soft_mutator_available() + heap->free_set()->mutator_allocator()->remaining_bytes();
-    allocated = _space_info->bytes_allocated_since_gc_start();
+    size_t const mutator_allocator_remaining = heap->free_set()->mutator_allocator()->remaining_bytes();
+    available = _space_info->soft_mutator_available() + mutator_allocator_remaining;
+    allocated = _space_info->bytes_allocated_since_gc_start() - mutator_allocator_remaining;
   }
 
   double avg_cycle_time = 0;

@@ -183,7 +183,7 @@ size_t ShenandoahYoungHeuristics::bytes_of_allocation_runway_before_gc_trigger(s
   size_t mutator_allocator_remaining = heap->free_set()->mutator_allocator()->remaining_bytes();
   size_t usage = _space_info->used() - mutator_allocator_remaining;
   size_t available = (capacity > usage) ? capacity - usage: 0;
-  size_t allocated = _free_set->get_bytes_allocated_since_gc_start();
+  size_t allocated = _free_set->get_bytes_allocated_since_gc_start() - mutator_allocator_remaining;
 
   size_t available_young_collected = heap->collection_set()->get_young_available_bytes_collected();
   size_t anticipated_available =
