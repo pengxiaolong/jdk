@@ -701,8 +701,8 @@ public:
     return  _mutator_bytes_allocated_since_gc_start + _total_bytes_previously_allocated;
   }
 
-  inline size_t get_bytes_allocated_since_previous_sample() {
-    size_t total_bytes = get_total_bytes_allocated();
+  inline size_t get_bytes_allocated_since_previous_sample(size_t mutator_allocator_remnant) {
+    size_t total_bytes = get_total_bytes_allocated() - mutator_allocator_remnant;
     size_t result;
     if (total_bytes < _mutator_bytes_at_last_sample) {
       // This rare condition may occur if bytes allocated overflows (wraps around) size_t tally of allocations.
