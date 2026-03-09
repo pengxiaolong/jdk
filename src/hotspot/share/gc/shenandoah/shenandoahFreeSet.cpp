@@ -382,6 +382,8 @@ void ShenandoahRegionPartitions::establish_mutator_intervals(idx_t mutator_leftm
   _available[int(ShenandoahFreeSetPartitionId::Collector)] = 0;
 
   _empty_region_counts[int(ShenandoahFreeSetPartitionId::Collector)] = 0;
+
+  _free_set->set_global_used(mutator_used);
 }
 
 void ShenandoahRegionPartitions::establish_old_collector_intervals(idx_t old_collector_leftmost,
@@ -407,6 +409,8 @@ void ShenandoahRegionPartitions::establish_old_collector_intervals(idx_t old_col
     _capacity[int(ShenandoahFreeSetPartitionId::OldCollector)] - _used[int(ShenandoahFreeSetPartitionId::OldCollector)];
 
   _empty_region_counts[int(ShenandoahFreeSetPartitionId::OldCollector)] = old_collector_empty;
+
+  _free_set->increase_global_used(old_collector_used);
 }
 
 void ShenandoahRegionPartitions::increase_used(ShenandoahFreeSetPartitionId which_partition, size_t bytes) {
@@ -416,6 +420,7 @@ void ShenandoahRegionPartitions::increase_used(ShenandoahFreeSetPartitionId whic
 
   _used[int(which_partition)] += bytes;
   _available[int(which_partition)] -= bytes;
+  _free_set->increase_global_used(bytes);
   assert (_used[int(which_partition)] <= _capacity[int(which_partition)],
           "Must not use (%zu) more than capacity (%zu) after increase by %zu",
           _used[int(which_partition)], _capacity[int(which_partition)], bytes);
@@ -428,6 +433,7 @@ void ShenandoahRegionPartitions::decrease_used(ShenandoahFreeSetPartitionId whic
   assert (_used[int(which_partition)] >= bytes, "Must not use less than zero after decrease");
   _used[int(which_partition)] -= bytes;
   _available[int(which_partition)] += bytes;
+  _free_set->decrease_global_used(bytes);
 }
 
 void ShenandoahRegionPartitions::increase_humongous_waste(ShenandoahFreeSetPartitionId which_partition, size_t bytes) {
@@ -447,14 +453,6 @@ void ShenandoahRegionPartitions::set_capacity_of(ShenandoahFreeSetPartitionId wh
   _capacity[int(which_partition)] = value;
   _available[int(which_partition)] = value - _used[int(which_partition)];
 }
-
-void ShenandoahRegionPartitions::set_used_by(ShenandoahFreeSetPartitionId which_partition, size_t value) {
-  shenandoah_assert_heaplocked();
-  assert (which_partition < NumPartitions, "selected free set must be valid");
-  _used[int(which_partition)] = value;
-  _available[int(which_partition)] = _capacity[int(which_partition)] - value;
-}
-
 
 void ShenandoahRegionPartitions::increase_capacity(ShenandoahFreeSetPartitionId which_partition, size_t bytes) {
   shenandoah_assert_heaplocked();
@@ -1237,6 +1235,7 @@ ShenandoahFreeSet::ShenandoahFreeSet(ShenandoahHeap* heap, size_t max_regions) :
   _total_global_used(0),
   _mutator_bytes_allocated_since_gc_start(0)
 {
+  ShenandoahHeapUsageAccountingLocker locker(usage_accounting_lock());
   clear_internal();
 }
 
@@ -1957,6 +1956,7 @@ void ShenandoahFreeSet::clear() {
 void ShenandoahFreeSet::clear_internal() {
   shenandoah_assert_heaplocked();
   _partitions.make_all_regions_unavailable();
+  _total_global_used = 0;
   _alloc_bias_weight = 0;
   _partitions.set_bias_from_left_to_right(ShenandoahFreeSetPartitionId::Mutator, true);
   _partitions.set_bias_from_left_to_right(ShenandoahFreeSetPartitionId::Collector, false);

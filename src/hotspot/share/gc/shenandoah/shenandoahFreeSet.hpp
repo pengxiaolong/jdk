@@ -321,7 +321,6 @@ public:
 
   inline void increase_used(ShenandoahFreeSetPartitionId which_partition, size_t bytes);
   inline void decrease_used(ShenandoahFreeSetPartitionId which_partition, size_t bytes);
-  inline void set_used_by(ShenandoahFreeSetPartitionId which_partition, size_t value);
   size_t used_by(ShenandoahFreeSetPartitionId which_partition) const {
     assert (which_partition < NumPartitions, "selected free set must be valid");
     return _used[int(which_partition)];
@@ -407,6 +406,7 @@ public:
 //     during the next GC pass.
 
 class ShenandoahFreeSet : public CHeapObj<mtGC> {
+  friend class VMStructs;
 using idx_t = ShenandoahSimpleBitMap::idx_t;
 private:
   ShenandoahHeap* const _heap;
@@ -438,11 +438,9 @@ private:
 
   const ssize_t INITIAL_ALLOC_BIAS_WEIGHT = 256;
 
-public:
-  // We make this public so that native code can see its value
-  // bytes used by global
+  // this is only used by hotspot agent to read the total used bytes of heap.
   size_t _total_global_used;
-private:
+
   size_t _mutator_bytes_allocated_since_gc_start;
 
   // Increases used memory for the partition if the allocation is successful. `in_new_region` will be set
@@ -618,7 +616,23 @@ public:
   // Return bytes used by global
   inline size_t global_used() {
     ShenandoahHeapUsageAccountingLocker locker(usage_accounting_lock());
-    return young_used() + old_used();
+    assert(_total_global_used == young_used() + old_used(), "Must be");
+    return _total_global_used;
+  }
+
+  void increase_global_used(size_t used_increment) {
+    ShenandoahHeapUsageAccountingLocker locker(usage_accounting_lock());
+    _total_global_used += used_increment;
+  }
+
+  void decrease_global_used(size_t used_decrement) {
+    ShenandoahHeapUsageAccountingLocker locker(usage_accounting_lock());
+    _total_global_used -= used_decrement;
+  }
+
+  void set_global_used(size_t total_global_used) {
+    ShenandoahHeapUsageAccountingLocker locker(usage_accounting_lock());
+    _total_global_used = total_global_used;
   }
 
   // A negative argument results in moving from old_collector to collector
