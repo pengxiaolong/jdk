@@ -102,12 +102,10 @@
  * @run main/othervm -Xmx1g -Xms1g -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:+UseShenandoahGC -XX:ShenandoahGCHeuristics=adaptive -XX:ShenandoahGCMode=generational
  *      -XX:+ShenandoahVerify
- *      -XX:ErrorFile=/tmp/hs_err_pid%p.log
  *      TestAllocObjects
  *
  * @run main/othervm -Xmx1g -Xms1g -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:+UseShenandoahGC -XX:ShenandoahGCHeuristics=adaptive -XX:ShenandoahGCMode=generational
- *      -XX:ErrorFile=/tmp/hs_err_pid%p.log
  *      TestAllocObjects
  */
 

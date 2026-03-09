@@ -175,7 +175,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
   }
 
   for (;/*Always return in the loop*/;) {
-    size_t free_words = pointer_delta( end(), obj);
+    size_t free_words = pointer_delta(end(), obj);
     if (free_words >= size) {
       if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
         reset_age();

@@ -1,5 +1,5 @@
 /*
-* Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
  * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -173,7 +173,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_slow(Shenando
     return obj;
   }
 
-  log_debug(gc, alloc)("%sAllocator: Failed to allocate satisfy the alloc request, reqeust size: %lu",
+  log_debug(gc, alloc)("%sAllocator: Failed to allocate satisfy the alloc request, request size: %lu",
     _alloc_partition_name, req.size());
   return nullptr;
 }
@@ -374,7 +374,7 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
       log_debug(gc, alloc)("%sAllocator: Releasing heap region %li from alloc region %i",
         _alloc_partition_name, r->index(), i);
       r->unset_active_alloc_region();
-      alloc_region.address.store_relaxed(nullptr);;
+      alloc_region.address.store_relaxed(nullptr);
       size_t free_bytes = r->free();
       if (free_bytes >= PLAB::min_size_bytes()) {
         total_free_bytes += free_bytes;

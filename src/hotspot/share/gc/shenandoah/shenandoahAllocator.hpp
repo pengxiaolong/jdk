@@ -28,7 +28,6 @@
 
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSetPartitionId.hpp"
-#include "gc/shenandoah/shenandoahPadding.hpp"
 #include "gc/shenandoah/shenandoahThreadLocalData.hpp"
 #include "memory/allocation.hpp"
 #include "runtime/thread.hpp"
