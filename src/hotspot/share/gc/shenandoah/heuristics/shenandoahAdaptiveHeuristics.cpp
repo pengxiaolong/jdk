@@ -402,9 +402,18 @@ static double saturate(double value, double min, double max) {
 //    in operation mode.  We want some way to decide that the average rate has changed, while keeping average
 //    allocation rate computation independent.
 bool ShenandoahAdaptiveHeuristics::should_start_gc() {
-  size_t capacity = ShenandoahHeap::heap()->soft_max_capacity();
-  size_t available = _space_info->soft_mutator_available();
-  size_t allocated = _space_info->bytes_allocated_since_gc_start();
+  ShenandoahHeap* const heap = ShenandoahHeap::heap();
+  size_t capacity = 0;
+  size_t mutator_allocator_remaining = 0;
+  size_t available = 0;
+  size_t allocated = 0;
+  {
+    ShenandoahHeapLocker locker(heap->lock());
+    capacity = ShenandoahHeap::heap()->soft_max_capacity();
+    mutator_allocator_remaining = heap->free_set()->mutator_allocator()->remaining_bytes();
+    available = _space_info->soft_mutator_available() + mutator_allocator_remaining;
+    allocated = _space_info->bytes_allocated_since_gc_start() - mutator_allocator_remaining;
+  }
 
   double avg_cycle_time = 0;
   double avg_alloc_rate = 0;
@@ -502,7 +511,7 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
       future_accelerated_planned_gc_time = avg_cycle_time;
       future_accelerated_planned_gc_time_is_average = true;
     }
-    allocated_bytes_since_last_sample = _free_set->get_bytes_allocated_since_previous_sample();
+    allocated_bytes_since_last_sample = _free_set->get_bytes_allocated_since_previous_sample(mutator_allocator_remaining);
     instantaneous_rate_words_per_second =
       (allocated_bytes_since_last_sample / HeapWordSize) / (now - _previous_acceleration_sample_timestamp);
 

@@ -170,12 +170,16 @@ bool ShenandoahYoungHeuristics::should_start_gc() {
 // generation at the end of the current cycle (as represented by young_regions_to_be_reclaimed) and on the anticipated
 // amount of time required to perform a GC.
 size_t ShenandoahYoungHeuristics::bytes_of_allocation_runway_before_gc_trigger(size_t young_regions_to_be_reclaimed) {
-  size_t capacity = _space_info->max_capacity();
-  size_t usage = _space_info->used();
-  size_t available = (capacity > usage)? capacity - usage: 0;
-  size_t allocated = _free_set->get_bytes_allocated_since_gc_start();
+  shenandoah_assert_heaplocked();
 
-  size_t available_young_collected = ShenandoahHeap::heap()->collection_set()->get_young_available_bytes_collected();
+  ShenandoahHeap* heap = ShenandoahHeap::heap();
+  size_t capacity = _space_info->max_capacity();
+  size_t mutator_allocator_remaining = heap->free_set()->mutator_allocator()->remaining_bytes();
+  size_t usage = _space_info->used() - mutator_allocator_remaining;
+  size_t available = (capacity > usage) ? capacity - usage: 0;
+  size_t allocated = _free_set->get_bytes_allocated_since_gc_start() - mutator_allocator_remaining;
+
+  size_t available_young_collected = heap->collection_set()->get_young_available_bytes_collected();
   size_t anticipated_available =
           available + young_regions_to_be_reclaimed * ShenandoahHeapRegion::region_size_bytes() - available_young_collected;
   size_t spike_headroom = capacity * ShenandoahAllocSpikeFactor / 100;

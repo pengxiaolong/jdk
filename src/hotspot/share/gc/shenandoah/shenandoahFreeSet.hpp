@@ -688,6 +688,8 @@ public:
 
   void increase_bytes_allocated(size_t bytes);
 
+  void decrease_bytes_allocated(size_t bytes);
+
   // Return an approximation of the bytes allocated since GC start.  The value returned is monotonically non-decreasing
   // in time within each GC cycle.  For certain GC cycles, the value returned may include some bytes allocated before
   // the start of the current GC cycle.
@@ -699,8 +701,8 @@ public:
     return  _mutator_bytes_allocated_since_gc_start + _total_bytes_previously_allocated;
   }
 
-  inline size_t get_bytes_allocated_since_previous_sample() {
-    size_t total_bytes = get_total_bytes_allocated();
+  inline size_t get_bytes_allocated_since_previous_sample(size_t mutator_allocator_remnant) {
+    size_t total_bytes = get_total_bytes_allocated() - mutator_allocator_remnant;
     size_t result;
     if (total_bytes < _mutator_bytes_at_last_sample) {
       // This rare condition may occur if bytes allocated overflows (wraps around) size_t tally of allocations.
@@ -877,7 +879,6 @@ public:
   }
   inline size_t reserved()  const { return _partitions.capacity_of(ShenandoahFreeSetPartitionId::Collector);           }
   inline size_t available() {
-    shenandoah_assert_not_heaplocked();
     ShenandoahRebuildLocker locker(rebuild_lock());
     return _partitions.available_in_locked_for_rebuild(ShenandoahFreeSetPartitionId::Mutator);
   }
