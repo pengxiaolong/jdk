@@ -54,7 +54,7 @@ protected:
 
   //Fields often get updated
   ShenandoahAllocRegion              _alloc_regions[MAX_ALLOC_REGION_COUNT];
-  Atomic<uint32_t>                   _epoch_id; // epoch id of _alloc_regions, increase by 1 whenever refresh _alloc_regions.
+  Atomic<uint32_t>                   _epoch_id; // epoch id of _alloc_regions, increase by 1 whenever replenish _alloc_regions.
 
 
   // Start index of the shared alloc regions where the allocation will start from.
@@ -69,19 +69,19 @@ protected:
   // attempt_allocation_in_alloc_regions to directly allocate from shared alloc regions.
   // When fast-path allocation fails, it will call attempt_allocation_slow which acquires heap lock.
   // When fast-path allocation succeeds while it also determines >=50% of alloc regions are ready to retire, it calls
-  // refresh_alloc_regions to eagerly retire and refill those alloc regions.
+  // replenish_alloc_regions to eagerly retire and refill those alloc regions.
   HeapWord* attempt_allocation(ShenandoahAllocRequest& req, bool& in_new_region);
 
   // Slow path of non-humongous allocation work.
   // When the allocator fails to allocate memory with fast-path w/o holding heap lock, it calls this function
   // to try the slow-path allocation. The function always acquires heap lock and then handle the slow-path allocation as:
-  // 1. if _epoch_id has changed by any other thread, try the fast-path again immediately since alloc regions have already been refreshed;
-  // 2. if any region of alloc regions is ready for refresh(retire), call refresh_alloc_regions to refresh;
+  // 1. if _epoch_id has changed by any other thread, try the fast-path again immediately since alloc regions have already been replenished;
+  // 2. if any region of alloc regions is ready for replenish(retire), call replenish_alloc_regions to replenish;
   // 3. if allocation is still not satisfied in above steps, call attempt_allocation_from_free_set to find a region
   //    in free set w/ sufficient free space and allocate in the region;
   // 4. update accounting if needed;
   // Caller must not hold heap lock.
-  HeapWord* attempt_allocation_slow(ShenandoahAllocRequest& req, bool& in_new_region, uint regions_ready_for_refresh, uint32_t old_epoch_id);
+  HeapWord* attempt_allocation_slow(ShenandoahAllocRequest& req, bool& in_new_region, uint regions_ready_for_replenish, uint32_t old_epoch_id);
 
   // Attempt to allocate from a region in free set, rather than from any of shared alloc regions, it might be called in the conditions below:
   // 1. All the shared alloc regions are not ready to retire, nor have enough space for allocation;
@@ -90,20 +90,20 @@ protected:
   HeapWord* attempt_allocation_from_free_set(ShenandoahAllocRequest& req, bool& in_new_region);
 
   // Attempt to allocate in a shared alloc region using atomic operation without holding the heap lock.
-  // Returns nullptr and overwrites regions_ready_for_refresh with the number of shared alloc regions that are ready
+  // Returns nullptr and overwrites regions_ready_for_replenish with the number of shared alloc regions that are ready
   // to be retired if it is unable to satisfy the allocation request from the existing shared alloc regions.
   // Caller should pass true for template parameter HOLDING_HEAP_LOCK if it is holding heap lock, in this case
   // the function will not use AtomicAccess to load the shared alloc regions.
   template<bool HOLDING_HEAP_LOCK = false>
-  HeapWord* attempt_allocation_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint const alloc_start_index, uint &regions_ready_for_refresh);
+  HeapWord* attempt_allocation_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint const alloc_start_index, uint &regions_ready_for_replenish);
 
   // Allocate in a region, use atomic operations if template parameter IS_SHARED_ALLOC_REGION is true.
   // When template parameter IS_SHARED_ALLOC_REGION is false, heap lock is required.
   template <bool IS_SHARED_ALLOC_REGION>
   HeapWord* allocate_in(ShenandoahHeapRegion* region, bool is_alloc_region, ShenandoahAllocRequest &req, bool &in_new_region, bool &ready_for_retire);
 
-  // Refresh new alloc regions, allocate the object in the new alloc region before making the new alloc region visible to other mutators.
-  int refresh_alloc_regions(ShenandoahAllocRequest* req = nullptr, bool* in_new_region = nullptr, HeapWord** obj = nullptr);
+  // replenish new alloc regions, allocate the object in the new alloc region before making the new alloc region visible to other mutators.
+  int replenish_alloc_regions(ShenandoahAllocRequest* req = nullptr, bool* in_new_region = nullptr, HeapWord** obj = nullptr);
 
 #ifdef ASSERT
   void verify(ShenandoahAllocRequest& req) {

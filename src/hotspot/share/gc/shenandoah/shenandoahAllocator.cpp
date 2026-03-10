@@ -130,36 +130,36 @@ uint ShenandoahAllocator<ALLOC_PARTITION>::alloc_start_index() {
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation(ShenandoahAllocRequest& req, bool& in_new_region) {
-  uint regions_ready_for_refresh = 0u;
+  uint regions_ready_for_replenish = 0u;
   uint32_t old_epoch_id = _epoch_id.load_relaxed();
   // Fast path: start the attempt to allocate in alloc regions right away
-  HeapWord* obj = attempt_allocation_in_alloc_regions(req, in_new_region, alloc_start_index(), regions_ready_for_refresh);
+  HeapWord* obj = attempt_allocation_in_alloc_regions(req, in_new_region, alloc_start_index(), regions_ready_for_replenish);
   if (obj != nullptr) {
     return obj;
   }
   // Slow path under heap lock
-  return attempt_allocation_slow(req, in_new_region, regions_ready_for_refresh, old_epoch_id);
+  return attempt_allocation_slow(req, in_new_region, regions_ready_for_replenish, old_epoch_id);
 }
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
-HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_slow(ShenandoahAllocRequest& req, bool& in_new_region, uint regions_ready_for_refresh, uint32_t old_epoch_id) {
+HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_slow(ShenandoahAllocRequest& req, bool& in_new_region, uint regions_ready_for_replenish, uint32_t old_epoch_id) {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock(), _yield_to_safepoint);
   HeapWord* obj = nullptr;
   if (old_epoch_id != _epoch_id.load_relaxed()) {
     // After taking heap lock, attempt to allocate in shared alloc regions again
-    // if alloc regions have been refreshed by other thread while current thread waits to take heap lock.
-    regions_ready_for_refresh = 0u; //reset regions_ready_for_refresh to 0.
-    obj = attempt_allocation_in_alloc_regions<true /*holding heap lock*/>(req, in_new_region, alloc_start_index(), regions_ready_for_refresh);
+    // if alloc regions have been replenished by other thread while current thread waits to take heap lock.
+    regions_ready_for_replenish = 0u; //reset regions_ready_for_replenish to 0.
+    obj = attempt_allocation_in_alloc_regions<true /*holding heap lock*/>(req, in_new_region, alloc_start_index(), regions_ready_for_replenish);
     if (obj != nullptr) {
       return obj;
     }
   }
 
   ShenandoahHeapAccountingUpdater accounting_updater(_free_set, ALLOC_PARTITION);
-  // Eagerly refresh alloc regions if any is ready for refresh since it is already holding the heap lock.
-  if (regions_ready_for_refresh > 0u) {
-    const int refreshed = refresh_alloc_regions(&req, &in_new_region, &obj);
-    if (refreshed > 0) {
+  // Eagerly replenish alloc regions if any is ready for replenish since it is already holding the heap lock.
+  if (regions_ready_for_replenish > 0u) {
+    const int replenished = replenish_alloc_regions(&req, &in_new_region, &obj);
+    if (replenished > 0) {
       accounting_updater._need_update = true;
       if (obj != nullptr) {
         return obj;
@@ -212,8 +212,8 @@ template<bool HOLDING_HEAP_LOCK>
 HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_in_alloc_regions(ShenandoahAllocRequest &req,
                                                                                     bool &in_new_region,
                                                                                     uint const alloc_start_index,
-                                                                                    uint &regions_ready_for_refresh) {
-  assert(regions_ready_for_refresh == 0u && in_new_region == false && alloc_start_index < _alloc_region_count, "Sanity check");
+                                                                                    uint &regions_ready_for_replenish) {
+  assert(regions_ready_for_replenish == 0u && in_new_region == false && alloc_start_index < _alloc_region_count, "Sanity check");
   uint i = alloc_start_index;
   do {
     ShenandoahHeapRegion* const r =  _alloc_regions[i].address.load_relaxed();
@@ -221,14 +221,14 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_in_alloc_regi
       bool ready_for_retire = false;
       HeapWord* obj = allocate_in<true>(r, true, req, in_new_region, ready_for_retire);
       if (ready_for_retire) {
-        regions_ready_for_refresh++;
+        regions_ready_for_replenish++;
       }
       if (obj != nullptr) {
         return obj;
       }
     } else {
-      // Empty shared alloc region slot is always ready for refresh
-      regions_ready_for_refresh++;
+      // Empty shared alloc region slot is always ready for replenish
+      regions_ready_for_replenish++;
     }
     if (++i == _alloc_region_count) {
       i = 0u;
@@ -278,7 +278,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::allocate_in(ShenandoahHeapRegion
 }
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
-int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocRequest* req, bool* in_new_region, HeapWord** obj) {
+int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllocRequest* req, bool* in_new_region, HeapWord** obj) {
   ResourceMark rm;
   shenandoah_assert_heaplocked();
   bool satisfy_alloc_req_first = (req != nullptr && obj != nullptr && *obj == nullptr);
@@ -288,9 +288,9 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
     min_req_size = req->is_lab_alloc() ? req->min_size() : req->size();
   }
 
-  int refreshable_alloc_regions = 0;
-  ShenandoahAllocRegion* refreshable[MAX_ALLOC_REGION_COUNT];
-  // Step 1: find out the alloc regions which are ready to refresh.
+  int replenishable_alloc_regions = 0;
+  ShenandoahAllocRegion* replenishable[MAX_ALLOC_REGION_COUNT];
+  // Step 1: find out the alloc regions which are ready to replenish.
   for (uint i = 0; i < _alloc_region_count; i++) {
     ShenandoahAllocRegion* alloc_region = &_alloc_regions[i];
     ShenandoahHeapRegion* region = alloc_region->address.load_relaxed();
@@ -302,17 +302,17 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
           _alloc_partition_name, region->index(), alloc_region->alloc_region_index);
         alloc_region->address.store_relaxed(nullptr);
       }
-      log_debug(gc, alloc)("%sAllocator: Adding alloc region %i to refreshable.",
+      log_debug(gc, alloc)("%sAllocator: Adding alloc region %i to replenishable.",
         _alloc_partition_name, alloc_region->alloc_region_index);
-      refreshable[refreshable_alloc_regions++] = alloc_region;
+      replenishable[replenishable_alloc_regions++] = alloc_region;
     }
   }
 
-  if (refreshable_alloc_regions > 0) {
+  if (replenishable_alloc_regions > 0) {
     // Step 2: allocate region from FreeSets to fill the alloc regions or satisfy the alloc request.
     ShenandoahHeapRegion* reserved[MAX_ALLOC_REGION_COUNT];
-    int reserved_regions = _free_set->reserve_alloc_regions(ALLOC_PARTITION, refreshable_alloc_regions, PLAB::min_size(), reserved);
-    assert(reserved_regions <= refreshable_alloc_regions, "Sanity check");
+    int reserved_regions = _free_set->reserve_alloc_regions(ALLOC_PARTITION, replenishable_alloc_regions, PLAB::min_size(), reserved);
+    assert(reserved_regions <= replenishable_alloc_regions, "Sanity check");
     log_debug(gc, alloc)("%sAllocator: Reserved %i regions for allocation.", _alloc_partition_name, reserved_regions);
 
     ShenandoahAffiliation affiliation = ALLOC_PARTITION == ShenandoahFreeSetPartitionId::OldCollector ? OLD_GENERATION : YOUNG_GENERATION;
@@ -332,11 +332,11 @@ int ShenandoahAllocator<ALLOC_PARTITION>::refresh_alloc_regions(ShenandoahAllocR
         // set_active_alloc_region must be executed before storing the region to the shared address
         OrderAccess::fence();
         log_debug(gc, alloc)("%sAllocator: Storing heap region %li to alloc region %i",
-          _alloc_partition_name, reserved[i]->index(), refreshable[i]->alloc_region_index);
-        refreshable[i]->address.store_relaxed(reserved[i]);
+          _alloc_partition_name, reserved[i]->index(), replenishable[i]->alloc_region_index);
+        replenishable[i]->address.store_relaxed(reserved[i]);
       }
 
-      // Increase _epoch_id by 1 when any of alloc regions has been refreshed.
+      // Increase _epoch_id by 1 when any of alloc regions has been replenished.
       _epoch_id.fetch_then_add(1u);
     }
     return reserved_regions;
@@ -400,7 +400,7 @@ template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 void ShenandoahAllocator<ALLOC_PARTITION>::reserve_alloc_regions() {
   shenandoah_assert_heaplocked();
   ShenandoahHeapAccountingUpdater accounting_updater(_free_set, ALLOC_PARTITION);
-  if (refresh_alloc_regions() > 0) {
+  if (replenish_alloc_regions() > 0) {
     accounting_updater._need_update = true;
   }
 }
