@@ -28,7 +28,6 @@
 #include "gc/shenandoah/shenandoahHeap.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "memory/padded.inline.hpp"
-#include "runtime/atomicAccess.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "utilities/globalDefinitions.hpp"
 
@@ -84,7 +83,7 @@ public:
           break;
         case ShenandoahFreeSetPartitionId::NotFree:
         default:
-          assert(false, "won't happen");
+          ShouldNotReachHere();
       }
       _free_set->partitions()->assert_bounds();
     }
@@ -216,7 +215,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_in_alloc_regi
   assert(regions_ready_for_replenish == 0u && in_new_region == false && alloc_start_index < _alloc_region_count, "Sanity check");
   uint i = alloc_start_index;
   do {
-    ShenandoahHeapRegion* const r =  _alloc_regions[i].address.load_relaxed();
+    ShenandoahHeapRegion* const r =  _alloc_regions[i].address.load_acquire();
     if (r != nullptr) {
       bool ready_for_retire = false;
       HeapWord* obj = allocate_in<true>(r, true, req, in_new_region, ready_for_retire);
@@ -300,7 +299,7 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
         region->unset_active_alloc_region();
         log_debug(gc, alloc)("%sAllocator: Removing heap region %li from alloc region %i.",
           _alloc_partition_name, region->index(), alloc_region->alloc_region_index);
-        alloc_region->address.store_relaxed(nullptr);
+        alloc_region->address.release_store(nullptr);
       }
       log_debug(gc, alloc)("%sAllocator: Adding alloc region %i to replenishable.",
         _alloc_partition_name, alloc_region->alloc_region_index);
@@ -328,12 +327,9 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
           satisfy_alloc_req_first = false;
         }
         reserved[i]->set_active_alloc_region();
-        // Enforce order here,
-        // set_active_alloc_region must be executed before storing the region to the shared address
-        OrderAccess::fence();
         log_debug(gc, alloc)("%sAllocator: Storing heap region %li to alloc region %i",
           _alloc_partition_name, reserved[i]->index(), replenishable[i]->alloc_region_index);
-        replenishable[i]->address.store_relaxed(reserved[i]);
+        replenishable[i]->address.release_store(reserved[i]);
       }
 
       // Increase _epoch_id by 1 when any of alloc regions has been replenished.
@@ -374,7 +370,7 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
       log_debug(gc, alloc)("%sAllocator: Releasing heap region %li from alloc region %i",
         _alloc_partition_name, r->index(), i);
       r->unset_active_alloc_region();
-      alloc_region.address.store_relaxed(nullptr);
+      alloc_region.address.release_store(nullptr);
       size_t free_bytes = r->free();
       if (free_bytes >= PLAB::min_size_bytes()) {
         total_bytes_to_unretire += free_bytes;

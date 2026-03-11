@@ -146,28 +146,9 @@ HeapWord* ShenandoahHeapRegion::allocate_lab(const ShenandoahAllocRequest& req, 
   return obj;
 }
 
-// Stack object to check if region is ready for retire after atomic allocation attempts,
-// It tracks the free words of the region and check it at the exit of atomic allocation.
-class ShenandoahHeapRegionReadyForRetireChecker : public StackObj {
-public:
-  size_t _remnant_free_words;
-  bool &_ready_for_retire;
-
-  ShenandoahHeapRegionReadyForRetireChecker(bool &ready_for_retire) : _remnant_free_words(ShenandoahHeapRegion::region_size_words()), _ready_for_retire(ready_for_retire) {
-    assert(!ready_for_retire, "Sanity check");
-  }
-
-  ~ShenandoahHeapRegionReadyForRetireChecker() {
-    if (_remnant_free_words < PLAB::min_size()) {
-      _ready_for_retire = true;
-    }
-  }
-};
-
 HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAllocRequest& req, bool &ready_for_retire) {
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
-  ShenandoahHeapRegionReadyForRetireChecker retire_checker(ready_for_retire);
   HeapWord* obj = atomic_top();
   if (obj == nullptr) {
     // _atomic_top has been updated to nullptr, it is not allowed to do atomic alloc
@@ -180,7 +161,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
       if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
         reset_age();
         adjust_alloc_metadata(req, size);
-        retire_checker._remnant_free_words = free_words - size;
+        ready_for_retire = (free_words - size) < PLAB::min_size();
         return obj;
       }
       if (obj == nullptr) {
@@ -188,7 +169,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
         return nullptr;
       }
     } else {
-      retire_checker._remnant_free_words = free_words;
+      ready_for_retire = free_words < PLAB::min_size();
       return nullptr;
     }
   }
@@ -197,7 +178,6 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
 HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size, bool &ready_for_retire) {
   assert(req.is_lab_alloc() && req.type() != ShenandoahAllocRequest::_alloc_plab, "Only tlab/gclab alloc");
 
-  ShenandoahHeapRegionReadyForRetireChecker retire_checker(ready_for_retire);
   HeapWord* obj = atomic_top();
   if (obj == nullptr) {
     // _atomic_top has been updated to nullptr, it is not allowed to do atomic alloc
@@ -215,7 +195,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
         reset_age();
         actual_size = adjusted_size;
         adjust_alloc_metadata(req, adjusted_size);
-        retire_checker._remnant_free_words = free_words - adjusted_size;
+        ready_for_retire = free_words - adjusted_size < PLAB::min_size();
         return obj;
       }
 
@@ -224,7 +204,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
         return nullptr;
       }
     } else {
-      retire_checker._remnant_free_words = free_words;
+      ready_for_retire = free_words < PLAB::min_size();
       log_trace(gc, free)("Failed to shrink TLAB or GCLAB request (%zu) in region %zu to %zu"
                           " because min_size() is %zu", req.size(), index(), adjusted_size, req.min_size());
       return nullptr;
