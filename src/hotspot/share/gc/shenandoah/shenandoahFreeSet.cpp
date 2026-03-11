@@ -3282,7 +3282,7 @@ int ShenandoahFreeSet::reserve_alloc_regions_internal(Iter iterator, int const r
   }
 
   if (reserved_free_region_count > 0) {
-    partitions()->decrease_empty_region_counts(ALLOC_PARTITION, (size_t) reserved_free_region_count);;
+    partitions()->decrease_empty_region_counts(ALLOC_PARTITION, (size_t) reserved_free_region_count);
     for (int i = 0; i < reserved_free_region_count; i++) {
       ShenandoahHeapRegion* r = free_heap_regions[i];
       r->set_affiliation(affiliation);
