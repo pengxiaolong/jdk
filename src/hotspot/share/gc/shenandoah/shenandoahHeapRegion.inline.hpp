@@ -206,7 +206,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
   for (;/*Always return in the loop*/;) {
     size_t adjusted_size = req.size();
     size_t free_words = pointer_delta(end(), obj);
-    size_t aligned_free_words = align_down((free_words * HeapWordSize) >> LogHeapWordSize, MinObjAlignment);
+    size_t aligned_free_words = align_down(free_words, MinObjAlignment);
     if (adjusted_size > aligned_free_words) {
       adjusted_size = aligned_free_words;
     }
