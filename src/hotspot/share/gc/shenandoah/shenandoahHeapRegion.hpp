@@ -251,14 +251,12 @@ private:
   Atomic<RegionState> _state;
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
-  shenandoah_padding(0);
   // Frequently updated fields
+  HeapWord* volatile _top;
+  shenandoah_padding(0);
   HeapWord* volatile _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
   shenandoah_padding(1);
-  HeapWord* volatile _top;
-  shenandoah_padding(2);
   size_t volatile _tlab_allocs;
-  shenandoah_padding(3);
   size_t volatile _gclab_allocs;
   size_t volatile _plab_allocs;
 

@@ -215,14 +215,6 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_in_alloc_regi
   assert(regions_ready_for_replenish == 0u && in_new_region == false && alloc_start_index < _alloc_region_count, "Sanity check");
   uint i = alloc_start_index;
   do {
-    if (!HOLDING_HEAP_LOCK && ALLOC_PARTITION == ShenandoahFreeSetPartitionId::Mutator && _yield_to_safepoint && SafepointSynchronize::is_synchronizing()) {
-      JavaThread* java_thread = JavaThread::current();
-      ThreadBlockInVM tbivm(java_thread);
-      while (SafepointSynchronize::is_synchronizing() &&
-               !SafepointMechanism::local_poll_armed(java_thread)) {
-        os::naked_yield();
-      }
-    }
     ShenandoahHeapRegion* const r =  _alloc_regions[i].address.load_acquire();
     if (r != nullptr) {
       bool ready_for_retire = false;
