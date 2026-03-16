@@ -252,9 +252,10 @@ private:
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
   // Frequently updated fields
-  HeapWord* volatile _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
   HeapWord* volatile _top;
-
+  shenandoah_padding(0);
+  HeapWord* volatile _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
+  shenandoah_padding(1);
   size_t volatile _tlab_allocs;
   size_t volatile _gclab_allocs;
   size_t volatile _plab_allocs;
