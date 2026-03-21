@@ -45,6 +45,7 @@ protected:
   struct ShenandoahAllocRegion {
     Atomic<ShenandoahHeapRegion*> address;
     int                           alloc_region_index;
+    shenandoah_padding_minus_size(0, sizeof(Atomic<ShenandoahHeapRegion*>) + sizeof(int));
   };
   // Fields won't change during VM life cycle
   ShenandoahFreeSet* const           _free_set;

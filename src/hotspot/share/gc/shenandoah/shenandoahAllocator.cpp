@@ -130,7 +130,7 @@ uint ShenandoahAllocator<ALLOC_PARTITION>::alloc_start_index() {
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation(ShenandoahAllocRequest& req, bool& in_new_region) {
   uint regions_ready_for_replenish = 0u;
-  uint32_t old_epoch_id = _epoch_id.load_relaxed();
+  uint32_t old_epoch_id = _epoch_id.load_acquire();
   // Fast path: start the attempt to allocate in alloc regions right away
   HeapWord* obj = attempt_allocation_in_alloc_regions(req, in_new_region, alloc_start_index(), regions_ready_for_replenish);
   if (obj != nullptr) {
@@ -333,7 +333,7 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
       }
 
       // Increase _epoch_id by 1 when any of alloc regions has been replenished.
-      _epoch_id.fetch_then_add(1u);
+      _epoch_id.fetch_then_add(1u, memory_order_release);
     }
     return reserved_regions;
   }
