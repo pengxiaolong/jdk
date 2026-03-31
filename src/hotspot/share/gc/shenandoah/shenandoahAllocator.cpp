@@ -344,6 +344,7 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::allocate(ShenandoahAllocRequest &req, bool &in_new_region) {
 #ifdef ASSERT
+  //Confirm that req corresponds to ALLOC_PARTITION
   verify(req);
 #endif // ASSERT
   if (ShenandoahHeapRegion::requires_humongous(req.size())) {

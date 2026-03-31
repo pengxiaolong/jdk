@@ -407,12 +407,15 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
   size_t mutator_allocator_remaining = 0;
   size_t available = 0;
   size_t allocated = 0;
+  size_t allocated_bytes_since_last_sample = 0;
+
   {
     ShenandoahHeapLocker locker(heap->lock());
     capacity = ShenandoahHeap::heap()->soft_max_capacity();
     mutator_allocator_remaining = heap->free_set()->mutator_allocator()->remaining_bytes();
     available = _space_info->soft_mutator_available() + mutator_allocator_remaining;
     allocated = _space_info->bytes_allocated_since_gc_start() - mutator_allocator_remaining;
+    allocated_bytes_since_last_sample = _free_set->get_bytes_allocated_since_previous_sample(mutator_allocator_remaining);
   }
 
   double avg_cycle_time = 0;
@@ -420,7 +423,6 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
   double now = get_most_recent_wake_time();
   size_t allocatable_words = this->allocatable(available);
   double predicted_future_accelerated_gc_time = 0.0;
-  size_t allocated_bytes_since_last_sample = 0;
   double instantaneous_rate_words_per_second = 0.0;
   size_t consumption_accelerated = 0;
   double acceleration = 0.0;
@@ -511,7 +513,6 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
       future_accelerated_planned_gc_time = avg_cycle_time;
       future_accelerated_planned_gc_time_is_average = true;
     }
-    allocated_bytes_since_last_sample = _free_set->get_bytes_allocated_since_previous_sample(mutator_allocator_remaining);
     instantaneous_rate_words_per_second =
       (allocated_bytes_since_last_sample / HeapWordSize) / (now - _previous_acceleration_sample_timestamp);
 

@@ -131,7 +131,7 @@ public:
 
   // Handle the allocation request - it is the entry point of memory allocation, including humongous allocation:
   // 1. for humongous allocation, it delegates to function ShenandoahFreeSet::allocate_contiguous;
-  // 2. for others allocations, it calls function attempt_allocation.
+  // 2. for other allocations, it calls function attempt_allocation.
   // Caller does not hold the heap lock.
   virtual HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 
@@ -140,8 +140,8 @@ public:
   // Collector calls this in preparation for choosing a collection set and/or rebuilding the freeset.
   virtual void release_alloc_regions(bool should_update_accounting = true);
 
-  // Caller must hold the heap lock at safepoint. This causes us to set aside N regions as directly allocatable
-  // by removing these regions from the relevant ShenandoahFreeSet partitions.
+  // Caller must hold the heap lock at safepoint. This causes us to set aside N (set via _alloc_region_count) regions
+  // as directly allocatable by removing these regions from the relevant ShenandoahFreeSet partitions.
   // Collector calls this after rebuilding the freeset.
   virtual void reserve_alloc_regions();
 
@@ -151,7 +151,7 @@ public:
 
 // Allocator impl for mutator:
 // 1. _yield_to_safepoint is set to true,
-// 1. _alloc_region_count is configured by flag ShenandoahMutatorAllocRegions
+// 2. _alloc_region_count is configured by flag ShenandoahMutatorAllocRegions
 class ShenandoahMutatorAllocator : public ShenandoahAllocator<ShenandoahFreeSetPartitionId::Mutator> {
 public:
   ShenandoahMutatorAllocator(ShenandoahFreeSet* free_set);
@@ -159,13 +159,13 @@ public:
 
 // Allocator impl for collector:
 // 1. _yield_to_safepoint is set to false,
-// 1. _alloc_region_count is configured by flag ShenandoahCollectorAllocRegions
+// 2. _alloc_region_count is configured by flag ShenandoahCollectorAllocRegions
 class ShenandoahCollectorAllocator : public ShenandoahAllocator<ShenandoahFreeSetPartitionId::Collector> {
 public:
   ShenandoahCollectorAllocator(ShenandoahFreeSet* free_set);
 };
 
-// Currently ShenandoahOldCollectorAllocator delegate allocation handling to ShenandoahFreeSet,
+// Currently ShenandoahOldCollectorAllocator delegates allocation handling to ShenandoahFreeSet,
 // because of the complexity in plab allocation where we have specialized logic to handle card table size alignment.
 // We will make ShenandoahOldCollectorAllocator use compare-and-swap/atomic operation later.
 class ShenandoahOldCollectorAllocator : public ShenandoahAllocator<ShenandoahFreeSetPartitionId::OldCollector> {
