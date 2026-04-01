@@ -371,19 +371,19 @@ void ShenandoahHeapRegion::reset_alloc_metadata() {
 }
 
 size_t ShenandoahHeapRegion::get_shared_allocs() const {
-  return used() - (AtomicAccess::load(&_tlab_allocs) + AtomicAccess::load(&_gclab_allocs) + AtomicAccess::load(&_plab_allocs)) * HeapWordSize;
+  return used() - (_tlab_allocs.load_relaxed() + _gclab_allocs.load_relaxed() + _plab_allocs.load_relaxed()) * HeapWordSize;
 }
 
 size_t ShenandoahHeapRegion::get_tlab_allocs() const {
-  return AtomicAccess::load(&_tlab_allocs) * HeapWordSize;
+  return _tlab_allocs.load_relaxed() * HeapWordSize;
 }
 
 size_t ShenandoahHeapRegion::get_gclab_allocs() const {
-  return AtomicAccess::load(&_gclab_allocs) * HeapWordSize;
+  return _gclab_allocs.load_relaxed() * HeapWordSize;
 }
 
 size_t ShenandoahHeapRegion::get_plab_allocs() const {
-  return AtomicAccess::load(&_plab_allocs) * HeapWordSize;
+  return _plab_allocs.load_relaxed() * HeapWordSize;
 }
 
 bool ShenandoahHeapRegion::has_allocs() const {

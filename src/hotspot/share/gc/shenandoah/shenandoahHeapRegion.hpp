@@ -256,9 +256,9 @@ private:
   shenandoah_padding(0);
   HeapWord* volatile _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
   shenandoah_padding(1);
-  size_t volatile _tlab_allocs;
-  size_t volatile _gclab_allocs;
-  size_t volatile _plab_allocs;
+  Atomic<size_t> _tlab_allocs;
+  Atomic<size_t> _gclab_allocs;
+  Atomic<size_t> _plab_allocs;
 
   Atomic<size_t> _live_data;
   Atomic<size_t> _critical_pins;

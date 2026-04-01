@@ -27,11 +27,10 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHHEAPREGION_INLINE_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHHEAPREGION_INLINE_HPP
 
-#include "gc/shenandoah/shenandoahHeapRegion.hpp"
-
 #include "gc/shared/plab.hpp"
 #include "gc/shenandoah/shenandoahGenerationalHeap.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
+#include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc/shenandoah/shenandoahOldGeneration.hpp"
 
 HeapWord* ShenandoahHeapRegion::allocate_aligned(size_t size, ShenandoahAllocRequest &req, size_t alignment_in_bytes) {
@@ -225,11 +224,11 @@ inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocReq
   // Only need to update alloc metadata for lab alloc, shared alloc is counted implicitly by tlab/gclab allocs
   if (req.is_lab_alloc()) {
     if (req.is_mutator_alloc()) {
-      AtomicAccess::add(&_tlab_allocs, size, memory_order_relaxed);
+      _tlab_allocs.add_then_fetch(size, memory_order_relaxed);
     } else if (req.is_old()) {
-      AtomicAccess::add(&_plab_allocs, size, memory_order_relaxed);
+      _plab_allocs.add_then_fetch(size, memory_order_relaxed);
     } else {
-      AtomicAccess::add(&_gclab_allocs, size, memory_order_relaxed);
+      _gclab_allocs.add_then_fetch(size, memory_order_relaxed);
     }
   }
 }
