@@ -470,8 +470,12 @@ void ShenandoahBarrierSet::arraycopy_marking(T* dst, size_t count) {
   }
 }
 
-inline bool ShenandoahBarrierSet::need_bulk_update(HeapWord* ary) {
-  return ary < _heap->heap_region_containing(ary)->get_update_watermark();
+inline bool ShenandoahBarrierSet::need_bulk_update(HeapWord* array) {
+  ShenandoahHeapRegion* r = _heap->heap_region_containing(array);
+  if (r->is_collector_allocator_reserved()) {
+    return true;
+  }
+  return array < r->get_update_watermark();
 }
 
 template <class T>

@@ -26,6 +26,7 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHHEAPREGION_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHHEAPREGION_HPP
 
+#include "shenandoahAllocator.hpp"
 #include "gc/shared/gc_globals.hpp"
 #include "gc/shared/spaceDecorator.hpp"
 #include "gc/shenandoah/shenandoahAffiliation.hpp"
@@ -267,14 +268,15 @@ private:
 
   Atomic<HeapWord*> _update_watermark;
 
-  volatile uint _age;
+  uint _age;
   bool _promoted_in_place;
-  CENSUS_NOISE(volatile uint _youth;)   // tracks epochs of retrograde ageing (rejuvenation)
+  CENSUS_NOISE(uint _youth;)   // tracks epochs of retrograde ageing (rejuvenation)
 
   ShenandoahSharedFlag _recycling; // Used to indicate that the region is being recycled; see try_recycle*().
 
   bool _needs_bitmap_reset;
 
+  Atomic<bool> _collector_allocator_reserved;
 public:
   ShenandoahHeapRegion(HeapWord* start, size_t index, bool committed);
 
@@ -537,8 +539,8 @@ public:
   void set_affiliation(ShenandoahAffiliation new_affiliation);
 
   // Region ageing and rejuvenation
-  uint age() const { return AtomicAccess::load(&_age); }
-  CENSUS_NOISE(uint youth() const { return AtomicAccess::load(&_youth); })
+  uint age() const { return _age; }
+  CENSUS_NOISE(uint youth() const { return _youth; })
 
   void increment_age() {
     const uint current_age = age();
@@ -550,24 +552,11 @@ public:
   }
 
   void reset_age() {
-    uint current = age();
-    // return immediately in fast path when current age is 0
-    if (current == 0u) return;
-    // reset_age can be called from multiple mutator/worker threads concurrently w/o heap lock,
-    // if no need to update census noise, there is no need to use cmpxchg here.
-    // The while loop with cmpxchg is to make sure we don't duplicately count the age in census noise.
-    uint old = current;
-    while ((current = AtomicAccess::cmpxchg(&_age, old, 0u)) != old &&
-           current != 0u) {
-      old = current;
-    }
-    if (current != 0u) {
-      // Only the thread successfully resets age should update census noise
-      CENSUS_NOISE(AtomicAccess::add(&_youth, current, memory_order_relaxed);)
-    }
+    CENSUS_NOISE(_youth += _age;)
+    _age = 0;
   }
 
-  CENSUS_NOISE(void clear_youth() { AtomicAccess::store(&_youth,  0u); })
+  CENSUS_NOISE(void clear_youth() { _youth = 0u; })
 
   inline bool need_bitmap_reset() const {
     return _needs_bitmap_reset;
@@ -600,6 +589,10 @@ public:
     // meanwhile the previous value of _atomic_top needs to be synced back to _top.
     HeapWord* prior_atomic_top = nullptr;
     HeapWord* current_atomic_top = atomic_top();
+    if (current_atomic_top > _top) {
+      // reset age if there was any allocation in the region after it's reserved as alloc region.
+      reset_age();
+    }
     while (true /*always break out in the loop*/) {
       assert(current_atomic_top != nullptr, "Must not");
       AtomicAccess::store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
@@ -614,11 +607,18 @@ public:
     assert(!is_atomic_alloc_region(), "Must not");
   }
 
-  inline bool is_atomic_alloc_region() const {
+  bool is_atomic_alloc_region() const {
     // region is an active atomic alloc region if the atomic top is set
     return atomic_top() != nullptr;
   }
 
+  void set_collector_allocator_reserved(bool is_collector_allocator_reserved) {
+    _collector_allocator_reserved.release_store(is_collector_allocator_reserved);
+  }
+
+  bool is_collector_allocator_reserved() const {
+    return _collector_allocator_reserved.load_acquire();
+  }
 private:
   void decrement_humongous_waste();
   void do_commit();

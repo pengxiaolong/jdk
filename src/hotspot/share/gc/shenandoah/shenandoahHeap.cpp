@@ -1205,6 +1205,12 @@ void ShenandoahHeap::concurrent_prepare_for_update_refs() {
     set_gc_state_concurrent(UPDATE_REFS, true);
   }
 
+  {
+    // Release alloc regions from allocators for collector.
+    ShenandoahHeapLocker locker(lock());
+    _free_set->collector_allocator()->release_alloc_regions();
+  }
+
   // This will propagate the gc state and retire gclabs and plabs for threads that require it.
   ShenandoahPrepareForUpdateRefsHandshakeClosure prepare_for_update_refs(_gc_state.raw_value());
 

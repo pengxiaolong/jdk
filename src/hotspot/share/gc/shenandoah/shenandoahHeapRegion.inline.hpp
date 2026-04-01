@@ -192,7 +192,6 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
     }
     if (adjusted_size >= req.min_size()) {
       if (try_allocate(obj /*value*/, adjusted_size, obj /*reference*/)) {
-        reset_age();
         actual_size = adjusted_size;
         adjust_alloc_metadata(req, adjusted_size);
         ready_for_retire = free_words - adjusted_size < PLAB::min_size();
@@ -310,16 +309,6 @@ inline HeapWord* ShenandoahHeapRegion::get_update_watermark() const {
 inline void ShenandoahHeapRegion::set_update_watermark(HeapWord* w) {
   assert(bottom() <= w && w <= top(), "within bounds");
   _update_watermark.release_store(w);
-}
-
-inline void ShenandoahHeapRegion::concurrent_set_update_watermark(HeapWord* w) {
-  assert(bottom() <= w && w <= top(), "within bounds");
-  HeapWord* watermark = nullptr;
-  while ((watermark = _update_watermark.load_acquire()) < w) {
-    if (_update_watermark.compare_exchange( watermark, w, memory_order_release) == watermark) {
-      return;
-    }
-  }
 }
 
 // Fast version that avoids synchronization, only to be used at safepoints.

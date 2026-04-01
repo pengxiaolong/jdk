@@ -185,6 +185,10 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_from_free_set
   if (r != nullptr) {
     bool ready_for_retire = false;
     HeapWord *obj = allocate_in<false>(r, false, req, in_new_region, ready_for_retire);
+    r->reset_age();
+    if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+      r->set_update_watermark(r->top<false>());
+    }
     assert(obj != nullptr, "Should always succeed.");
 
     _free_set->partitions()->increase_used(ALLOC_PARTITION, (req.actual_size() + req.waste()) * HeapWordSize);
@@ -258,17 +262,6 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::allocate_in(ShenandoahHeapRegion
       _alloc_partition_name, actual_size * HeapWordSize, region->index(), req.size() * HeapWordSize, is_alloc_region ? "true" : "false", region->free());
     req.set_actual_size(actual_size);
     in_new_region = obj == region->bottom(); // is in new region when the allocated object is at the bottom of the region.
-    if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-      // For GC allocations, we advance update_watermark because the objects relocated into this memory during
-      // evacuation are not updated during evacuation.  For both young and old regions r, it is essential that all
-      // PLABs be made parsable at the end of evacuation.  This is enabled by retiring all plabs at end of evacuation.
-      if (IS_SHARED_ALLOC_REGION) {
-        region->concurrent_set_update_watermark(region->top<true>());
-      } else {
-        region->set_update_watermark(region->top<false>());
-      }
-    }
-
     if (!IS_SHARED_ALLOC_REGION && region->free_words() < PLAB::min_size()) {
       ready_for_retire = true;
     }
@@ -297,6 +290,10 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
     if (region == nullptr || free_bytes / HeapWordSize < PLAB::min_size()) {
       if (region != nullptr) {
         region->unset_active_alloc_region();
+        if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+          region->set_update_watermark(region->top<false /*false to avoid loading _atomic_top*/>());
+          region->set_collector_allocator_reserved(false);
+        }
         log_debug(gc, alloc)("%sAllocator: Removing heap region %li from alloc region %i.",
           _alloc_partition_name, region->index(), alloc_region->alloc_region_index);
         alloc_region->address.release_store(nullptr);
@@ -323,10 +320,14 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
         if (satisfy_alloc_req_first && reserved[i]->free_words() >= min_req_size) {
           bool ready_for_retire = false;
           *obj = allocate_in<false>(reserved[i], true, *req, *in_new_region, ready_for_retire);
+          reserved[i]->reset_age();
           assert(*obj != nullptr, "Should always succeed");
           satisfy_alloc_req_first = false;
         }
         reserved[i]->set_active_alloc_region();
+        if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+          reserved[i]->set_collector_allocator_reserved(true);
+        }
         log_debug(gc, alloc)("%sAllocator: Storing heap region %li to alloc region %i",
           _alloc_partition_name, reserved[i]->index(), replenishable[i]->alloc_region_index);
         replenishable[i]->address.release_store(reserved[i]);
@@ -371,6 +372,10 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
       log_debug(gc, alloc)("%sAllocator: Releasing heap region %li from alloc region %i",
         _alloc_partition_name, r->index(), i);
       r->unset_active_alloc_region();
+      if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+        r->set_update_watermark(r->top<false /*false to avoid loading _atomic_top*/>());
+        r->set_collector_allocator_reserved(false);
+      }
       alloc_region.address.release_store(nullptr);
       size_t free_bytes = r->free();
       if (free_bytes >= PLAB::min_size_bytes()) {

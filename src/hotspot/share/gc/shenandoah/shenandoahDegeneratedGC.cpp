@@ -412,6 +412,11 @@ void ShenandoahDegenGC::op_init_update_refs() {
   ShenandoahHeap* const heap = ShenandoahHeap::heap();
   heap->prepare_update_heap_references();
   heap->set_update_refs_in_progress(true);
+  {
+    // Release alloc regions from allocators for collector.
+    ShenandoahHeapLocker locker(heap->lock());
+    heap->free_set()->collector_allocator()->release_alloc_regions();
+  }
 }
 
 void ShenandoahDegenGC::op_update_refs() {
