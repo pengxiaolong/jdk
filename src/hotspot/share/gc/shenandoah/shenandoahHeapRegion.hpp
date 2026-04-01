@@ -26,7 +26,6 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHHEAPREGION_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHHEAPREGION_HPP
 
-#include "shenandoahAllocator.hpp"
 #include "gc/shared/gc_globals.hpp"
 #include "gc/shared/spaceDecorator.hpp"
 #include "gc/shenandoah/shenandoahAffiliation.hpp"
@@ -530,7 +529,6 @@ public:
 
   inline HeapWord* get_update_watermark() const;
   inline void set_update_watermark(HeapWord* w);
-  inline void concurrent_set_update_watermark(HeapWord* w);
   inline void set_update_watermark_at_safepoint(HeapWord* w);
 
   inline ShenandoahAffiliation affiliation() const;
