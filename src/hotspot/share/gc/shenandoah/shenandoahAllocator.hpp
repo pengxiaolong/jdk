@@ -127,7 +127,7 @@ protected:
 public:
 
   ShenandoahAllocator(uint alloc_region_count, ShenandoahFreeSet* free_set, bool yield_to_safepoint);
-  virtual ~ShenandoahAllocator() { }
+  ~ShenandoahAllocator() = default;
 
   // Handle the allocation request - it is the entry point of memory allocation, including humongous allocation:
   // 1. for humongous allocation, it delegates to function ShenandoahFreeSet::allocate_contiguous;
@@ -138,15 +138,15 @@ public:
   // Caller must hold the heap lock at safepoint. This causes all directly allocatable regions to be placed into
   // the appropriate ShenandoahFreeSet partition.
   // Collector calls this in preparation for choosing a collection set and/or rebuilding the freeset.
-  virtual void release_alloc_regions(bool should_update_accounting = true);
+  void release_alloc_regions(bool should_update_accounting = true);
 
   // Caller must hold the heap lock at safepoint. This causes us to set aside N (set via _alloc_region_count) regions
   // as directly allocatable by removing these regions from the relevant ShenandoahFreeSet partitions.
   // Collector calls this after rebuilding the freeset.
-  virtual void reserve_alloc_regions();
+  void reserve_alloc_regions();
 
   // Return the total remaining bytes from all alloc regions held by the allocator.
-  virtual size_t remaining_bytes();
+  size_t remaining_bytes();
 };
 
 // Allocator impl for mutator:

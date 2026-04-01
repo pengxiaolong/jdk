@@ -479,3 +479,8 @@ HeapWord* ShenandoahOldCollectorAllocator::allocate(ShenandoahAllocRequest& req,
 
   return nullptr;
 }
+
+// Explicit template instantiations
+template class ShenandoahAllocator<ShenandoahFreeSetPartitionId::Mutator>;
+template class ShenandoahAllocator<ShenandoahFreeSetPartitionId::Collector>;
+template class ShenandoahAllocator<ShenandoahFreeSetPartitionId::OldCollector>;
