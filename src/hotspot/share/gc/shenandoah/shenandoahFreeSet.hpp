@@ -597,6 +597,7 @@ private:
 
   // Determine whether we prefer to allocate from left to right or from right to left within the OldCollector free-set.
   void establish_old_collector_alloc_bias();
+  size_t get_usable_free_words(size_t free_bytes) const;
 
   void reduce_young_reserve(size_t adjusted_young_reserve, size_t requested_young_reserve);
   void reduce_old_reserve(size_t adjusted_old_reserve, size_t requested_old_reserve);
@@ -1014,8 +1015,6 @@ public:
   // of regions reserved of young evacuations.
   void compute_young_and_old_reserves(size_t young_cset_regions, size_t old_cset_regions,
                                       size_t &young_reserve_result, size_t &old_reserve_result) const;
-
-  static size_t get_usable_free_words(size_t free_bytes);
 };
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHFREESET_HPP
