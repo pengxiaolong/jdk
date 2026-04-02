@@ -3218,7 +3218,6 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
 template<ShenandoahFreeSetPartitionId ALLOC_PARTITION, typename Iter>
 int ShenandoahFreeSet::reserve_alloc_regions_internal(Iter iterator, int const regions_to_reserve, size_t min_free_words, ShenandoahHeapRegion** reserved_regions) {
   ShenandoahAffiliation affiliation = ALLOC_PARTITION == ShenandoahFreeSetPartitionId::OldCollector ? OLD_GENERATION : YOUNG_GENERATION;
-  ShenandoahHeapRegion* free_heap_regions[ShenandoahAllocator<ALLOC_PARTITION>::MAX_ALLOC_REGION_COUNT];
   int free_heap_region_count = 0;
   int reserved_regions_count = 0;
 
@@ -3237,7 +3236,19 @@ int ShenandoahFreeSet::reserve_alloc_regions_internal(Iter iterator, int const r
     if (ac_words >= min_free_words) {
       if (r->is_empty()) {
         assert(r->affiliation() == FREE, "Empty region must be free");
-        free_heap_regions[free_heap_region_count++] = r;
+        free_heap_region_count++;
+        r->set_affiliation(affiliation);
+        r->make_regular_allocation(affiliation);
+        if (affiliation == OLD_GENERATION) {
+          // Any OLD region allocated during concurrent coalesce-and-fill does not need to be coalesced and filled because
+          // all objects allocated within this region are above TAMS (and thus are implicitly marked).  In case this is an
+          // OLD region and concurrent preparation for mixed evacuations visits this region before the start of the next
+          // old-gen concurrent mark (i.e. this region is allocated following the start of old-gen concurrent mark but before
+          // concurrent preparations for mixed evacuations are completed), we mark this region as not requiring any
+          // coalesce-and-fill processing.
+          r->end_preemptible_coalesce_and_fill();
+          _heap->old_generation()->clear_cards_for(r);
+        }
       }
       reserved_regions[reserved_regions_count++] = r;
     }
@@ -3261,21 +3272,6 @@ int ShenandoahFreeSet::reserve_alloc_regions_internal(Iter iterator, int const r
 
   if (free_heap_region_count > 0) {
     partitions()->decrease_empty_region_counts(ALLOC_PARTITION, (size_t) free_heap_region_count);
-    for (int i = 0; i < free_heap_region_count; i++) {
-      ShenandoahHeapRegion* r = free_heap_regions[i];
-      r->set_affiliation(affiliation);
-      r->make_regular_allocation(affiliation);
-      if (affiliation == OLD_GENERATION) {
-        // Any OLD region allocated during concurrent coalesce-and-fill does not need to be coalesced and filled because
-        // all objects allocated within this region are above TAMS (and thus are implicitly marked).  In case this is an
-        // OLD region and concurrent preparation for mixed evacuations visits this region before the start of the next
-        // old-gen concurrent mark (i.e. this region is allocated following the start of old-gen concurrent mark but before
-        // concurrent preparations for mixed evacuations are completed), we mark this region as not requiring any
-        // coalesce-and-fill processing.
-        r->end_preemptible_coalesce_and_fill();
-        _heap->old_generation()->clear_cards_for(r);
-      }
-    }
   }
 
   for (int i = 0; i < reserved_regions_count; i++) {
