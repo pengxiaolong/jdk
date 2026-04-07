@@ -39,6 +39,7 @@ HeapWord* ShenandoahHeapRegion::allocate_aligned(size_t size, ShenandoahAllocReq
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
   assert(is_old(), "aligned allocations are only taken from OLD regions to support PLABs");
   assert(is_aligned(alignment_in_bytes, HeapWordSize), "Expect heap word alignment");
+  assert(!is_recycling(), "Region must have already been recycled");
 
   HeapWord* orig_top = top();
   size_t alignment_in_words = alignment_in_bytes / HeapWordSize;
@@ -90,6 +91,7 @@ HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
   shenandoah_assert_heaplocked_or_safepoint();
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
   assert(size >= ShenandoahHeap::min_fill_size(), "Cannot fill unless min fill size");
+  assert(!is_recycling(), "Region must have already been recycled");
 
   HeapWord* obj = top();
   HeapWord* new_top = obj + size;
@@ -106,6 +108,7 @@ HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
 HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocRequest& req) {
   shenandoah_assert_heaplocked_or_safepoint();
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
+  assert(!is_recycling(), "Region must have already been recycled");
 
   HeapWord* obj = top();
   if (pointer_delta(end(), obj) >= size) {

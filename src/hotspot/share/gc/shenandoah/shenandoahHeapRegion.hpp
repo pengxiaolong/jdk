@@ -418,6 +418,10 @@ public:
 
   void try_recycle();
 
+  inline bool is_recycling() const {
+    return _recycling.is_set();
+  }
+
   inline void begin_preemptible_coalesce_and_fill() {
     _coalesce_and_fill_boundary = _bottom;
   }

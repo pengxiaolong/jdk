@@ -232,8 +232,9 @@ inline bool ShenandoahFreeSet::can_allocate_from(size_t idx) const {
 }
 
 inline size_t ShenandoahFreeSet::alloc_capacity(ShenandoahHeapRegion *r) const {
-  if (r->is_trash()) {
-    // This would be recycled on allocation path
+  if (r->is_trash() || r->is_recycling()) {
+    // Trash region would be recycled on allocation path,
+    // Region under recycling is considered empty.
     return ShenandoahHeapRegion::region_size_bytes();
   } else {
     return r->free();
