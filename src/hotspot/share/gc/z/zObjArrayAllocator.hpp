@@ -30,8 +30,6 @@ class ZObjArrayAllocator : public ObjArrayAllocator {
 private:
   virtual oop initialize(HeapWord* mem) const override;
 
-  void yield_for_safepoint() const;
-
 public:
   ZObjArrayAllocator(Klass* klass, size_t word_size, int length, bool do_zero, Thread* thread);
 };

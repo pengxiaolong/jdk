@@ -32,10 +32,6 @@
 ZObjArrayAllocator::ZObjArrayAllocator(Klass* klass, size_t word_size, int length, bool do_zero, Thread* thread)
   : ObjArrayAllocator(klass, word_size, length, do_zero, thread) {}
 
-void ZObjArrayAllocator::yield_for_safepoint() const {
-  ThreadBlockInVM tbivm(JavaThread::cast(_thread));
-}
-
 oop ZObjArrayAllocator::initialize(HeapWord* mem) const {
   // ZGC specializes the initialization by performing segmented clearing
   // to allow shorter time-to-safepoints.
@@ -107,33 +103,41 @@ oop ZObjArrayAllocator::initialize(HeapWord* mem) const {
   bool seen_gc_safepoint = false;
 
   auto initialize_memory = [&]() {
-    for (size_t processed = 0; processed < process_size; processed += segment_max) {
-      // Clear segment
-      uintptr_t* const start = (uintptr_t*)(mem + process_start_offset + processed);
-      const size_t remaining = process_size - processed;
-      const size_t segment = MIN2(remaining, segment_max);
-      // Usually, the young marking code has the responsibility to color
-      // raw nulls, before they end up in the old generation. However, the
-      // invisible roots are hidden from the marking code, and therefore
-      // we must color the nulls already here in the initialization. The
-      // color we choose must be store bad for any subsequent stores, regardless
-      // of how many GC flips later it will arrive. That's why we OR in 11
-      // (ZPointerRememberedMask) in the remembered bits, similar to how
-      // forgotten old oops also have 11, for the very same reason.
-      // However, we opportunistically try to color without the 11 remembered
-      // bits, hoping to not get interrupted in the middle of a GC safepoint.
-      // Most of the time, we manage to do that, and can the avoid having GC
-      // barriers trigger slow paths for this.
-      const uintptr_t colored_null = seen_gc_safepoint ? (ZPointerStoreGoodMask | ZPointerRememberedMask)
-                                                       : ZPointerStoreGoodMask;
-      const uintptr_t fill_value = is_reference_type(element_type) ? colored_null : 0;
-      ZUtils::fill(start, segment, fill_value);
+    // Usually, the young marking code has the responsibility to color
+    // raw nulls, before they end up in the old generation. However, the
+    // invisible roots are hidden from the marking code, and therefore
+    // we must color the nulls already here in the initialization. The
+    // color we choose must be store bad for any subsequent stores, regardless
+    // of how many GC flips later it will arrive. That's why we OR in 11
+    // (ZPointerRememberedMask) in the remembered bits, similar to how
+    // forgotten old oops also have 11, for the very same reason.
+    // However, we opportunistically try to color without the 11 remembered
+    // bits, hoping to not get interrupted in the middle of a GC safepoint.
+    // Most of the time, we manage to do that, and can the avoid having GC
+    // barriers trigger slow paths for this.
+    const uintptr_t colored_null = seen_gc_safepoint ? (ZPointerStoreGoodMask | ZPointerRememberedMask)
+                                                     : ZPointerStoreGoodMask;
+    const uintptr_t fill_value = is_reference_type(element_type) ? colored_null : 0;
 
-      // Safepoint
-      yield_for_safepoint();
+    if (seen_gc_safepoint || !is_reference_type(element_type)) {
+      ThreadBlockInVM tbivm(JavaThread::cast(_thread));
+      uintptr_t* const start = (uintptr_t*)(mem + process_start_offset);
+      ZUtils::fill(start, process_size, fill_value);
+      return true;
+    }
+
+    for (size_t processed = 0; processed < process_size; processed += segment_max) {
+      {
+        ThreadBlockInVM tbivm(JavaThread::cast(_thread));
+        // Clear segment
+        uintptr_t* const start = (uintptr_t*)(mem + process_start_offset + processed);
+        const size_t remaining = process_size - processed;
+        const size_t segment = MIN2(remaining, segment_max);
+        ZUtils::fill(start, segment, fill_value);
+      }
 
       // Deal with safepoints
-      if (is_reference_type(element_type) && !seen_gc_safepoint && gc_safepoint_happened()) {
+      if (!seen_gc_safepoint && gc_safepoint_happened()) {
         // The first time we observe a GC safepoint in the yield point,
         // we have to restart processing with 11 remembered bits.
         seen_gc_safepoint = true;
