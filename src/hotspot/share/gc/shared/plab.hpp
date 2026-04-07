@@ -79,10 +79,13 @@ public:
 
   // Minimum PLAB size.
   static size_t min_size();
-  // Minimum PLAB size in bytes.
-  static size_t min_size_bytes();
+  // Minimum PLAB size in byte.
+  static size_t min_byte_size();
   // Maximum PLAB size.
   static size_t max_size();
+  // Maximum PLAB size in byte.
+  static size_t max_byte_size();
+
 
   // If an allocation of the given "word_sz" can be satisfied within the
   // buffer, do the allocation, returning a pointer to the start of the

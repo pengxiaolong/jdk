@@ -37,12 +37,16 @@ size_t PLAB::min_size() {
   return align_object_size(MAX2(MinTLABSize / HeapWordSize, (size_t)oopDesc::header_size())) + CollectedHeap::lab_alignment_reserve();
 }
 
-size_t PLAB::min_size_bytes() {
+size_t PLAB::min_byte_size() {
   return min_size() * HeapWordSize;
 }
 
 size_t PLAB::max_size() {
   return ThreadLocalAllocBuffer::max_size();
+}
+
+size_t PLAB::max_byte_size() {
+  return max_size() * HeapWordSize;
 }
 
 void PLAB::startup_initialization() {

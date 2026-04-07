@@ -378,7 +378,7 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
       }
       alloc_region.address.release_store(nullptr);
       size_t free_bytes = r->free();
-      if (free_bytes >= PLAB::min_size_bytes()) {
+      if (free_bytes >= PLAB::min_byte_size()) {
         total_bytes_to_unretire += free_bytes;
         total_regions_to_unretire++;
         _free_set->partitions()->unretire_to_partition(r, ALLOC_PARTITION);
