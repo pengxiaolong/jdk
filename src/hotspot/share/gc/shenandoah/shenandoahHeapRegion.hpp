@@ -388,9 +388,10 @@ public:
 
   inline HeapWord* allocate_lab(const ShenandoahAllocRequest &req, size_t &actual_size);
 
-  // Atomic allocation using CAS, return nullptr if full or no enough space for the req
+  // Allocate object with CAS, return nullptr if full or not enough space for the req
   inline HeapWord* allocate_atomic(size_t word_size, const ShenandoahAllocRequest &req, bool &ready_for_retire);
 
+  // Allocate lab with CAS, return nullptr if full or not enough space for the req
   inline HeapWord* allocate_lab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size, bool &ready_for_retire);
 
   // Use AtomicAccess::cmpxchg to allocate the object,
