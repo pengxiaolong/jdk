@@ -77,11 +77,11 @@ public:
 
   static size_t size_required_for_allocation(size_t word_size) { return word_size + CollectedHeap::lab_alignment_reserve(); }
 
-  // Minimum PLAB size.
+  // Minimum PLAB size in word.
   static size_t min_size();
   // Minimum PLAB size in byte.
   static size_t min_byte_size();
-  // Maximum PLAB size.
+  // Maximum PLAB size in word.
   static size_t max_size();
   // Maximum PLAB size in byte.
   static size_t max_byte_size();
