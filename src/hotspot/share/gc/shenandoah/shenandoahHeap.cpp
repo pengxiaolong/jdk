@@ -2293,6 +2293,7 @@ void ShenandoahHeap::reset_bytes_allocated_since_gc_start() {
     // Single-gen Shenandoah uses global heuristics.
     unaccounted_bytes = heuristics()->force_alloc_rate_sample(actual_allocated);
   }
+  // Bytes allocated since gc start includes the total unused bytes in mutator allocator reserved for CAS allocation.
   _free_set->reset_bytes_allocated_since_gc_start(unaccounted_bytes + mutator_allocator_remaining_bytes);
 }
 

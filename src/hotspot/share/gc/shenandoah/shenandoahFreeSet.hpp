@@ -694,6 +694,7 @@ public:
   // Return an approximation of the bytes allocated since GC start.  The value returned is monotonically non-decreasing
   // in time within each GC cycle.  For certain GC cycles, the value returned may include some bytes allocated before
   // the start of the current GC cycle.
+  // Bytes allocated since gc start includes the total unused bytes in mutator allocator reserved for CAS allocation.
   inline size_t get_bytes_allocated_since_gc_start() const {
     return _mutator_bytes_allocated_since_gc_start;
   }
