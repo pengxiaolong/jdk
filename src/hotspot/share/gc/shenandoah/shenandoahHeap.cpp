@@ -789,7 +789,7 @@ bool ShenandoahHeap::is_in(const void* p) const {
   }
 
   // Now check if we point to a live section in active region.
-  const ShenandoahHeapRegion* r = heap_region_containing(p);
+  ShenandoahHeapRegion* r = heap_region_containing(p);
   if (p >= r->top()) {
     return false;
   }

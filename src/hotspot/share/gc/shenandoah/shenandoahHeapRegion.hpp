@@ -40,6 +40,10 @@
 class VMStructs;
 class ShenandoahHeapRegionStateConstant;
 
+// Use ShenandoahLock as recycle lock
+typedef ShenandoahLock                                ShenandoahRegionRecycleLock;
+typedef ShenandoahLocker<ShenandoahRegionRecycleLock> ShenandoahRegionRecycleLocker;
+
 class ShenandoahHeapRegion {
   friend class VMStructs;
   friend class ShenandoahHeapRegionStateConstant;
@@ -197,7 +201,6 @@ public:
   bool is_regular()                const { return state() == _regular; }
   bool is_humongous_continuation() const { return state() == _humongous_cont; }
   bool is_regular_pinned()         const { return state() == _pinned; }
-  bool is_trash()                  const { return state() == _trash; }
 
   // Derived state predicates (boolean combinations of individual states)
   bool static is_empty_state(RegionState state) { return state == _empty_committed || state == _empty_uncommitted; }
@@ -210,6 +213,8 @@ public:
   bool is_cset()                   const { auto cur_state = state(); return cur_state == _cset || cur_state == _pinned_cset; }
   bool is_pinned()                 const { auto cur_state = state(); return cur_state == _pinned || cur_state == _pinned_cset || cur_state == _pinned_humongous_start; }
 
+  bool is_trash();
+
   inline bool is_young() const;
   inline bool is_old() const;
   inline bool is_affiliated() const;
@@ -218,7 +223,7 @@ public:
   bool is_alloc_allowed()          const { auto cur_state = state(); return is_empty_state(cur_state) || cur_state == _regular || cur_state == _pinned; }
   bool is_stw_move_allowed()       const { auto cur_state = state(); return cur_state == _regular || cur_state == _cset || (ShenandoahHumongousMoves && cur_state == _humongous_start); }
 
-  RegionState state()              const { return _state.load_relaxed(); }
+  RegionState state()              const { return _state.load_acquire(); }
   int  state_ordinal()             const { return region_state_to_ordinal(state()); }
 
   void record_pin();
@@ -269,8 +274,7 @@ private:
   bool _promoted_in_place;
   CENSUS_NOISE(uint _youth;)   // tracks epochs of retrograde ageing (rejuvenation)
 
-  ShenandoahSharedFlag _recycling; // Used to indicate that the region is being recycled; see try_recycle*().
-
+  ShenandoahRegionRecycleLock _recycle_lock; // Recycle of a region must be done under lock
   bool _needs_bitmap_reset;
 
 public:
@@ -414,13 +418,7 @@ public:
 
   void print_on(outputStream* st) const;
 
-  void try_recycle_under_lock();
-
   void try_recycle();
-
-  inline bool is_recycling() const {
-    return _recycling.is_set();
-  }
 
   inline void begin_preemptible_coalesce_and_fill() {
     _coalesce_and_fill_boundary = _bottom;

@@ -88,7 +88,6 @@ ShenandoahHeapRegion::ShenandoahHeapRegion(HeapWord* start, size_t index, bool c
   if (ZapUnusedHeapArea && committed) {
     SpaceMangler::mangle_region(MemRegion(_bottom, _end));
   }
-  _recycling.unset();
 }
 
 void ShenandoahHeapRegion::report_illegal_transition(const char *method) {
@@ -288,8 +287,17 @@ void ShenandoahHeapRegion::make_cset() {
   }
 }
 
+bool ShenandoahHeapRegion::is_trash() {
+  ShenandoahRegionRecycleLocker locker(&_recycle_lock);
+  return state() == _trash;
+}
+
 void ShenandoahHeapRegion::make_trash() {
   shenandoah_assert_heaplocked();
+  // Trash region will be recycled under _recycle_lock(w/o heap if recycle is done by GC threads)
+  // The state transition to _trash must be done under _recycle_lock ensure GC threads always see correct state later
+  // when they recycle all the trash regions.
+  ShenandoahRegionRecycleLocker locker(&_recycle_lock);
   reset_age();
   switch (state()) {
     case _humongous_start:
@@ -560,9 +568,8 @@ ShenandoahHeapRegion* ShenandoahHeapRegion::humongous_start_region() const {
   return r;
 }
 
-
 void ShenandoahHeapRegion::recycle_internal() {
-  assert(_recycling.is_set() && is_trash(), "Wrong state");
+  assert(state() == _trash, "Must be trash");
   ShenandoahHeap* heap = ShenandoahHeap::heap();
 
   _mixed_candidate_garbage_words = 0;
@@ -579,47 +586,15 @@ void ShenandoahHeapRegion::recycle_internal() {
   set_affiliation(FREE);
 }
 
-// Upon return, this region has been recycled.  We try to recycle it.
-// We may fail if some other thread recycled it before we do.
-void ShenandoahHeapRegion::try_recycle_under_lock() {
-  shenandoah_assert_heaplocked();
-  if (is_trash() && _recycling.try_set()) {
-    if (is_trash()) {
-      // At freeset rebuild time, which precedes recycling of collection set, we treat all cset regions as
-      // part of capacity, as empty, as fully available, and as unaffiliated.  This provides short-lived optimism
-      // for triggering heuristics.  It greatly simplifies and reduces the locking overhead required
-      // by more time-precise accounting of these details.
-      recycle_internal();
-    }
-    _recycling.unset();
-  } else {
-    // Ensure recycling is unset before returning to mutator to continue memory allocation.
-    // Otherwise, the mutator might see region as fully recycled and might change its affiliation only to have
-    // the racing GC worker thread overwrite its affiliation to FREE.
-    while (_recycling.is_set()) {
-      if (os::is_MP()) {
-        SpinPause();
-      } else {
-        os::naked_yield();
-      }
-    }
-  }
-}
-
-// Note that return from try_recycle() does not mean the region has been recycled.  It only means that
-// some GC worker thread has taken responsibility to recycle the region, eventually.
+// Recycle the region state is _trash.
 void ShenandoahHeapRegion::try_recycle() {
-  shenandoah_assert_not_heaplocked();
-  if (is_trash() && _recycling.try_set()) {
-    // Double check region state after win the race to set recycling flag
-    if (is_trash()) {
-      // At freeset rebuild time, which precedes recycling of collection set, we treat all cset regions as
-      // part of capacity, as empty, as fully available, and as unaffiliated.  This provides short-lived optimism
-      // for triggering and pacing heuristics.  It greatly simplifies and reduces the locking overhead required
-      // by more time-precise accounting of these details.
-      recycle_internal();
-    }
-    _recycling.unset();
+  ShenandoahRegionRecycleLocker locker(&_recycle_lock);
+  if (state() == _trash) {
+    // At freeset rebuild time, which precedes recycling of collection set, we treat all cset regions as
+    // part of capacity, as empty, as fully available, and as unaffiliated.  This provides short-lived optimism
+    // for triggering and pacing heuristics.  It greatly simplifies and reduces the locking overhead required
+    // by more time-precise accounting of these details.
+    recycle_internal();
   }
 }
 
@@ -834,7 +809,7 @@ void ShenandoahHeapRegion::set_state(RegionState to) {
     evt.set_to(to);
     evt.commit();
   }
-  _state.store_relaxed(to);
+  _state.release_store(to);
 }
 
 void ShenandoahHeapRegion::record_pin() {

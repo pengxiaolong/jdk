@@ -522,7 +522,7 @@ class ShenandoahEnsureHeapActiveClosure: public ShenandoahHeapRegionClosure {
 public:
   void heap_region_do(ShenandoahHeapRegion* r) override {
     if (r->is_trash()) {
-      r->try_recycle_under_lock();
+      r->try_recycle();
       // No need to adjust_interval_for_recycled_old_region.  That will be taken care of during freeset rebuild.
     }
     if (r->is_cset()) {
@@ -970,7 +970,7 @@ public:
     // Recycle all trash regions
     if (r->is_trash()) {
       live = 0;
-      r->try_recycle_under_lock();
+      r->try_recycle();
       // No need to adjust_interval_for_recycled_old_region.  That will be taken care of during freeset rebuild.
     } else {
       if (r->is_old()) {

@@ -232,7 +232,7 @@ inline bool ShenandoahFreeSet::can_allocate_from(size_t idx) const {
 }
 
 inline size_t ShenandoahFreeSet::alloc_capacity(ShenandoahHeapRegion *r) const {
-  if (r->is_trash() || r->is_recycling()) {
+  if (r->is_trash()) {
     // Trash region would be recycled on allocation path,
     // Region under recycling is considered empty.
     return ShenandoahHeapRegion::region_size_bytes();
@@ -1567,11 +1567,11 @@ HeapWord* ShenandoahFreeSet::try_allocate_in(ShenandoahHeapRegion* r, Shenandoah
     return nullptr;
   }
   HeapWord* result = nullptr;
-  // We must call try_recycle_under_lock() even if !r->is_trash().  The reason is that if r is being recycled at this
+  // We must call try_recycle even if !r->is_trash().  The reason is that if r is being recycled at this
   // moment by a GC worker thread, it may appear to be not trash even though it has not yet been fully recycled.  If
   // we proceed without waiting for the worker to finish recycling the region, the worker thread may overwrite the
   // region's affiliation with FREE after we set the region's affiliation to req.afiliation() below
-  r->try_recycle_under_lock();
+  r->try_recycle();
   in_new_region = r->is_empty();
   if (in_new_region) {
     log_debug(gc, free)("Using new region (%zu) for %s (" PTR_FORMAT ").",
@@ -1826,7 +1826,7 @@ HeapWord* ShenandoahFreeSet::allocate_contiguous(ShenandoahAllocRequest& req, bo
     for (idx_t i = beg; i <= end; i++) {
       ShenandoahHeapRegion* r = _heap->get_region(i);
       assert(i == beg || _heap->get_region(i - 1)->index() + 1 == r->index(), "Should be contiguous");
-      r->try_recycle_under_lock();
+      r->try_recycle();
       assert(r->is_empty(), "Should be empty");
       r->set_affiliation(req.affiliation());
       if (i == beg) {
@@ -1852,7 +1852,7 @@ HeapWord* ShenandoahFreeSet::allocate_contiguous(ShenandoahAllocRequest& req, bo
       ShenandoahHeapRegion* r = _heap->get_region(i);
       assert(i == beg || _heap->get_region(i - 1)->index() + 1 == r->index(), "Should be contiguous");
       assert(r->is_empty(), "Should be empty");
-      r->try_recycle_under_lock();
+      r->try_recycle();
       r->set_affiliation(req.affiliation());
       r->make_regular_allocation(req.affiliation());
       if ((i == end) && (used_words_in_last_region > 0)) {
@@ -1971,7 +1971,7 @@ bool ShenandoahFreeSet::flip_to_old_gc(ShenandoahHeapRegion* r) {
     ShenandoahRightLeftIterator iterator(&_partitions, ShenandoahFreeSetPartitionId::OldCollector, true);
     idx_t unusable_trash = -1;
     for (unusable_trash = iterator.current(); iterator.has_next(); unusable_trash = iterator.next()) {
-      const ShenandoahHeapRegion* region = _heap->get_region(unusable_trash);
+      ShenandoahHeapRegion* region = _heap->get_region(unusable_trash);
       if (region->is_trash() && _heap->is_concurrent_weak_root_in_progress()) {
         break;
       }
