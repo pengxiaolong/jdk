@@ -213,8 +213,7 @@ public:
   bool is_cset()                   const { auto cur_state = state(); return cur_state == _cset || cur_state == _pinned_cset; }
   bool is_pinned()                 const { auto cur_state = state(); return cur_state == _pinned || cur_state == _pinned_cset || cur_state == _pinned_humongous_start; }
 
-  bool is_trash();
-
+  inline bool is_trash();
   inline bool is_young() const;
   inline bool is_old() const;
   inline bool is_affiliated() const;

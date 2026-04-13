@@ -229,6 +229,13 @@ inline const char* ShenandoahHeapRegion::affiliation_name() const {
   return shenandoah_affiliation_name(affiliation());
 }
 
+inline bool ShenandoahHeapRegion::is_trash() {
+  // State transitions to _trash(trashing) and from _trash(recycling) are done
+  // under _recycle_lock, therefore the lock is required here for reliable result.
+  ShenandoahRegionRecycleLocker locker(&_recycle_lock);
+  return state() == _trash;
+}
+
 inline bool ShenandoahHeapRegion::is_young() const {
   return affiliation() == YOUNG_GENERATION;
 }

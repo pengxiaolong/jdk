@@ -287,11 +287,6 @@ void ShenandoahHeapRegion::make_cset() {
   }
 }
 
-bool ShenandoahHeapRegion::is_trash() {
-  ShenandoahRegionRecycleLocker locker(&_recycle_lock);
-  return state() == _trash;
-}
-
 void ShenandoahHeapRegion::make_trash() {
   shenandoah_assert_heaplocked();
   // Trash region will be recycled under _recycle_lock(w/o heap if recycle is done by GC threads)
