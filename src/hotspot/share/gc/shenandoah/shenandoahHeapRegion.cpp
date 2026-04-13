@@ -566,7 +566,6 @@ void ShenandoahHeapRegion::recycle_internal() {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
 
   _mixed_candidate_garbage_words = 0;
-  set_top(bottom());
   clear_live_data();
   reset_alloc_metadata();
   heap->marking_context()->reset_top_at_mark_start(this);
@@ -574,7 +573,9 @@ void ShenandoahHeapRegion::recycle_internal() {
   if (ZapUnusedHeapArea) {
     SpaceMangler::mangle_region(MemRegion(bottom(), end()));
   }
-
+  set_top(bottom());
+  OrderAccess::fence();
+  // Lastly set region state and affiliation
   make_empty();
   set_affiliation(FREE);
 }
@@ -583,7 +584,7 @@ void ShenandoahHeapRegion::recycle_internal() {
 // We may fail if some other thread recycled it before we do.
 void ShenandoahHeapRegion::try_recycle_under_lock() {
   shenandoah_assert_heaplocked();
-  if (is_trash() && _recycling.try_set()) {
+  if (_recycling.try_set()) {
     if (is_trash()) {
       // At freeset rebuild time, which precedes recycling of collection set, we treat all cset regions as
       // part of capacity, as empty, as fully available, and as unaffiliated.  This provides short-lived optimism
@@ -610,8 +611,7 @@ void ShenandoahHeapRegion::try_recycle_under_lock() {
 // some GC worker thread has taken responsibility to recycle the region, eventually.
 void ShenandoahHeapRegion::try_recycle() {
   shenandoah_assert_not_heaplocked();
-  if (is_trash() && _recycling.try_set()) {
-    // Double check region state after win the race to set recycling flag
+  if (_recycling.try_set()) {
     if (is_trash()) {
       // At freeset rebuild time, which precedes recycling of collection set, we treat all cset regions as
       // part of capacity, as empty, as fully available, and as unaffiliated.  This provides short-lived optimism

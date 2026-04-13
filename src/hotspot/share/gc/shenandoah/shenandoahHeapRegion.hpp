@@ -252,7 +252,7 @@ private:
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
   // Frequently updated fields
-  HeapWord* _top;
+  Atomic<HeapWord*> _top;
 
   size_t _tlab_allocs;
   size_t _gclab_allocs;
@@ -456,8 +456,8 @@ public:
   // Find humongous start region that this region belongs to
   ShenandoahHeapRegion* humongous_start_region() const;
 
-  HeapWord* top() const         { return _top;     }
-  void set_top(HeapWord* v)     { _top = v;        }
+  HeapWord* top() const         { return _top.load_acquire(); }
+  void set_top(HeapWord* v)     { _top.release_store(v);      }
 
   HeapWord* new_top() const     { return _new_top; }
   void set_new_top(HeapWord* v) { _new_top = v;    }
