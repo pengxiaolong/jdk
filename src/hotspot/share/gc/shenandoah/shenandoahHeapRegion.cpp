@@ -576,7 +576,7 @@ void ShenandoahHeapRegion::recycle_internal() {
   set_top(bottom());
   set_affiliation(FREE);
 
-  // Lastly set region state and affiliation
+  // Lastly, set region state to empty
   make_empty();
 }
 
