@@ -574,10 +574,10 @@ void ShenandoahHeapRegion::recycle_internal() {
     SpaceMangler::mangle_region(MemRegion(bottom(), end()));
   }
   set_top(bottom());
+  set_affiliation(FREE);
 
   // Lastly set region state and affiliation
   make_empty();
-  set_affiliation(FREE);
 }
 
 // Upon return, this region has been recycled.  We try to recycle it.
