@@ -574,7 +574,7 @@ void ShenandoahHeapRegion::recycle_internal() {
     SpaceMangler::mangle_region(MemRegion(bottom(), end()));
   }
   set_top(bottom());
-  OrderAccess::fence();
+
   // Lastly set region state and affiliation
   make_empty();
   set_affiliation(FREE);
@@ -834,7 +834,7 @@ void ShenandoahHeapRegion::set_state(RegionState to) {
     evt.set_to(to);
     evt.commit();
   }
-  _state.store_relaxed(to);
+  _state.release_store(to);
 }
 
 void ShenandoahHeapRegion::record_pin() {
