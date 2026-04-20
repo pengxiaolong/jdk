@@ -62,6 +62,7 @@
 #include "gc/shenandoah/shenandoahMarkingContext.inline.hpp"
 #include "gc/shenandoah/shenandoahMemoryPool.hpp"
 #include "gc/shenandoah/shenandoahMonitoringSupport.hpp"
+#include "gc/shenandoah/shenandoahObjArrayAllocator.hpp"
 #include "gc/shenandoah/shenandoahOldGeneration.hpp"
 #include "gc/shenandoah/shenandoahPadding.hpp"
 #include "gc/shenandoah/shenandoahParallelCleaning.inline.hpp"
@@ -1027,6 +1028,11 @@ HeapWord* ShenandoahHeap::mem_allocate(size_t size) {
   return allocate_memory(req);
 }
 
+oop ShenandoahHeap::array_allocate(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
+  ShenandoahObjArrayAllocator allocator(klass, size, length, do_zero, THREAD);
+  return allocator.allocate();
+}
+
 MetaWord* ShenandoahHeap::satisfy_failed_metadata_allocation(ClassLoaderData* loader_data,
                                                              size_t size,
                                                              Metaspace::MetadataType mdtype) {
@@ -1610,7 +1616,8 @@ void ShenandoahHeap::set_active_generation(ShenandoahGeneration* generation) {
   _active_generation = generation;
 }
 
-void ShenandoahHeap::on_cycle_start(GCCause::Cause cause, ShenandoahGeneration* generation) {
+void ShenandoahHeap::on_cycle_start(GCCause::Cause cause, ShenandoahGeneration* generation,
+                                    bool is_degenerated, bool is_out_of_cycle) {
   shenandoah_policy()->record_collection_cause(cause);
 
   const GCCause::Cause current = gc_cause();
@@ -1619,7 +1626,11 @@ void ShenandoahHeap::on_cycle_start(GCCause::Cause cause, ShenandoahGeneration* 
 
   set_gc_cause(cause);
 
-  generation->heuristics()->record_cycle_start();
+  if (is_degenerated) {
+    generation->heuristics()->record_degenerated_cycle_start(is_out_of_cycle);
+  } else {
+    generation->heuristics()->record_cycle_start();
+  }
 }
 
 void ShenandoahHeap::on_cycle_end(ShenandoahGeneration* generation) {
@@ -1915,6 +1926,26 @@ void ShenandoahHeap::heap_region_iterate(ShenandoahHeapRegionClosure* blk) const
   }
 }
 
+class ShenandoahHeapRegionIteratorTask : public WorkerTask {
+private:
+  ShenandoahRegionIterator _regions;
+  ShenandoahHeapRegionClosure* _closure;
+
+public:
+  ShenandoahHeapRegionIteratorTask(ShenandoahHeapRegionClosure* closure)
+    : WorkerTask("Shenandoah Heap Region Iterator")
+    , _closure(closure) {}
+
+  void work(uint worker_id) override {
+    ShenandoahParallelWorkerSession worker_session(worker_id);
+    ShenandoahHeapRegion* region = _regions.next();
+    while (region != nullptr) {
+      _closure->heap_region_do(region);
+      region = _regions.next();
+    }
+  }
+};
+
 class ShenandoahParallelHeapRegionTask : public WorkerTask {
 private:
   ShenandoahHeap* const _heap;
@@ -1969,6 +2000,11 @@ void ShenandoahHeap::parallel_heap_region_iterate(ShenandoahHeapRegionClosure* b
   } else {
     heap_region_iterate(blk);
   }
+}
+
+void ShenandoahHeap::heap_region_iterator(ShenandoahHeapRegionClosure* closure) const {
+  ShenandoahHeapRegionIteratorTask task(closure);
+  workers()->run_task(&task);
 }
 
 class ShenandoahRendezvousHandshakeClosure : public HandshakeClosure {
@@ -2275,26 +2311,26 @@ address ShenandoahHeap::in_cset_fast_test_addr() {
 
 void ShenandoahHeap::reset_bytes_allocated_since_gc_start() {
   // It is important to force_alloc_rate_sample() before the associated generation's bytes_allocated has been reset.
-  // Note that there is no lock to prevent additional alloations between sampling bytes_allocated_since_gc_start() and
-  // reset_bytes_allocated_since_gc_start().  If additional allocations happen, they will be ignored in the average
-  // allocation rate computations.  This effect is considered to be be negligible.
-
-  // unaccounted_bytes is the bytes not accounted for by our forced sample.  If the sample interval is too short,
-  // the "forced sample" will not happen, and any recently allocated bytes are "unaccounted for".  We pretend these
-  // bytes are allocated after the start of subsequent gc.
-  ShenandoahHeapLocker locker(lock());
-  size_t unaccounted_bytes;
-  size_t bytes_allocated = _free_set->get_bytes_allocated_since_gc_start();
-  size_t mutator_allocator_remaining_bytes = _free_set->mutator_allocator()->remaining_bytes();
-  size_t actual_allocated = bytes_allocated - mutator_allocator_remaining_bytes;
-  if (mode()->is_generational()) {
-    unaccounted_bytes = young_generation()->heuristics()->force_alloc_rate_sample(actual_allocated);
-  } else {
-    // Single-gen Shenandoah uses global heuristics.
-    unaccounted_bytes = heuristics()->force_alloc_rate_sample(actual_allocated);
+  // Note that we obtain heap lock to prevent additional allocations between sampling bytes_allocated_since_gc_start()
+  // and reset_bytes_allocated_since_gc_start()
+  {
+    ShenandoahHeapLocker locker(lock());
+    // unaccounted_bytes is the bytes not accounted for by our forced sample.  If the sample interval is too short,
+    // the "forced sample" will not happen, and any recently allocated bytes are "unaccounted for".  We pretend these
+    // bytes are allocated after the start of subsequent gc.
+    size_t unaccounted_bytes;
+    size_t bytes_allocated = _free_set->get_bytes_allocated_since_gc_start();
+    size_t mutator_allocator_remaining_bytes = _free_set->mutator_allocator()->remaining_bytes();
+    size_t actual_allocated = bytes_allocated - mutator_allocator_remaining_bytes;
+    if (mode()->is_generational()) {
+      unaccounted_bytes = young_generation()->heuristics()->force_alloc_rate_sample(actual_allocated);
+    } else {
+      // Single-gen Shenandoah uses global heuristics.
+      unaccounted_bytes = heuristics()->force_alloc_rate_sample(actual_allocated);
+    }
+    // Bytes allocated since gc start includes the total unused bytes in mutator allocator reserved for CAS allocation.
+    _free_set->reset_bytes_allocated_since_gc_start(unaccounted_bytes + mutator_allocator_remaining_bytes);
   }
-  // Bytes allocated since gc start includes the total unused bytes in mutator allocator reserved for CAS allocation.
-  _free_set->reset_bytes_allocated_since_gc_start(unaccounted_bytes + mutator_allocator_remaining_bytes);
 }
 
 void ShenandoahHeap::set_degenerated_gc_in_progress(bool in_progress) {
