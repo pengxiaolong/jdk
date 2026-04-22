@@ -672,7 +672,7 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
   }
 
   is_spiking = _allocation_rate.is_spiking(rate, _spike_threshold_sd);
-  if (is_spiking && (rate != 0) && (future_planned_gc_time * rate > allocatable_bytes)) {
+  if (is_spiking && (future_planned_gc_time * rate > allocatable_bytes)) {
     log_trigger("%s GC time (%.2f ms) is above the time for instantaneous allocation rate (%.0f %sB/s)"
                 " to deplete free headroom (%zu%s) (spike threshold = %.2f)",
                 future_planned_gc_time_is_average? "Average": "Linear prediction of", future_planned_gc_time * 1000,
