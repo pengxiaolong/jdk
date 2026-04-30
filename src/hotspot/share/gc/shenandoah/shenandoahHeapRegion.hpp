@@ -495,7 +495,7 @@ public:
   HeapWord* top() const {
     if (CHECK_ATOMIC_TOP) {
       HeapWord* at = atomic_top();
-      return at == nullptr ? AtomicAccess::load(&_top) : at;
+      return at == nullptr ? AtomicAccess::load_acquire(&_top) : at;
     }
     assert(!is_atomic_alloc_region(), "Must not be an atomic alloc region");
     return _top;
@@ -608,7 +608,7 @@ public:
     }
     while (true /*always break out in the loop*/) {
       assert(current_atomic_top != nullptr, "Must not");
-      AtomicAccess::store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
+      AtomicAccess::release_store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
       prior_atomic_top = AtomicAccess::cmpxchg(&_atomic_top, current_atomic_top, (HeapWord*) nullptr, memory_order_release);
       if (prior_atomic_top == current_atomic_top) {
         // break out the loop when successfully exchange _atomic_top to nullptr

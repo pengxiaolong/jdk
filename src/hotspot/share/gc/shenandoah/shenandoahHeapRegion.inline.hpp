@@ -172,6 +172,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
       ready_for_retire = free_words < PLAB::min_size();
       return nullptr;
     }
+    SpinPause(); // Spin pause on contention.
   }
 }
 
@@ -208,6 +209,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
                           " because min_size() is %zu", req.size(), index(), adjusted_size, req.min_size());
       return nullptr;
     }
+    SpinPause(); // Spin pause on contention.
   }
 }
 

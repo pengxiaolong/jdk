@@ -108,9 +108,9 @@ uint ShenandoahAllocator<ALLOC_PARTITION>::alloc_start_index() {
       alloc_start_index = 0u;
     } else {
       if (ALLOC_PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
-        alloc_start_index = abs(os::random()) % _alloc_region_count;
+        alloc_start_index = (os::random() & 0x7fffffff) % _alloc_region_count;
       } else {
-        alloc_start_index = (Thread::current()->is_Worker_thread() ? WorkerThread::worker_id() : abs(os::random())) % _alloc_region_count;
+        alloc_start_index = (Thread::current()->is_Worker_thread() ? WorkerThread::worker_id() : (os::random() & 0x7fffffff)) % _alloc_region_count;
       }
     }
     switch (ALLOC_PARTITION) {
@@ -324,10 +324,10 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
           assert(*obj != nullptr, "Should always succeed");
           satisfy_alloc_req_first = false;
         }
-        reserved[i]->set_active_alloc_region();
         if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
           reserved[i]->set_collector_allocator_reserved(true);
         }
+        reserved[i]->set_active_alloc_region();
         log_debug(gc, alloc)("%sAllocator: Storing heap region %li to alloc region %i",
           _alloc_partition_name, reserved[i]->index(), replenishable[i]->alloc_region_index);
         replenishable[i]->address.release_store(reserved[i]);
