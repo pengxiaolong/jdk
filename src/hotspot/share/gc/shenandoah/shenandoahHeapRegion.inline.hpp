@@ -215,7 +215,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
 
 bool ShenandoahHeapRegion::try_allocate(HeapWord* const obj, size_t const size, HeapWord* &prior_atomic_top) {
   HeapWord* new_top = obj + size;
-  if ((prior_atomic_top = AtomicAccess::cmpxchg(&_atomic_top, obj, new_top, memory_order_release)) == obj) {
+  if ((prior_atomic_top = _atomic_top.compare_exchange(obj, new_top, memory_order_release)) == obj) {
     assert(is_object_aligned(new_top), "new top breaks alignment: " PTR_FORMAT, p2i(new_top));
     assert(is_object_aligned(obj),     "obj is not aligned: "       PTR_FORMAT, p2i(obj));
     return true;

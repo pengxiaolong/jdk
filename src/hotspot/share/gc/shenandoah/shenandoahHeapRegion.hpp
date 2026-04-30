@@ -257,7 +257,7 @@ private:
   // Frequently updated fields
   HeapWord* volatile _top;
   shenandoah_padding(0);
-  HeapWord* volatile _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
+  Atomic<HeapWord*> _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
   shenandoah_padding(1);
   Atomic<size_t> _tlab_allocs;
   Atomic<size_t> _gclab_allocs;
@@ -270,7 +270,7 @@ private:
 
   Atomic<HeapWord*> _update_watermark;
 
-  uint _age;
+  Atomic<uint> _age;
   bool _promoted_in_place;
   CENSUS_NOISE(uint _youth;)   // tracks epochs of retrograde ageing (rejuvenation)
 
@@ -486,7 +486,7 @@ public:
   ShenandoahHeapRegion* humongous_start_region() const;
 
   HeapWord* atomic_top() const {
-    return AtomicAccess::load_acquire(&_atomic_top);
+    return _atomic_top.load_acquire();
   }
 
   // Default top(). Returns _atomic_top when the region is an active CAS alloc
@@ -571,21 +571,21 @@ public:
   void set_affiliation(ShenandoahAffiliation new_affiliation);
 
   // Region ageing and rejuvenation
-  uint age() const { return _age; }
+  uint age() const { return _age.load_relaxed(); }
   CENSUS_NOISE(uint youth() const { return _youth; })
 
   void increment_age() {
     const uint current_age = age();
     assert(current_age <= markWord::max_age, "Error");
     if (current_age < markWord::max_age) {
-      const uint old = AtomicAccess::cmpxchg(&_age, current_age, current_age + 1, memory_order_relaxed);
+      const uint old = _age.compare_exchange(current_age, current_age + 1, memory_order_relaxed);
       assert(old == current_age || old == 0u, "Only fail when any mutator reset the age.");
     }
   }
 
   void reset_age() {
-    CENSUS_NOISE(_youth += _age;)
-    _age = 0;
+    CENSUS_NOISE(_youth += age();)
+    _age.store_relaxed(0);
   }
 
   CENSUS_NOISE(void clear_youth() { _youth = 0u; })
@@ -606,7 +606,7 @@ public:
     shenandoah_assert_heaplocked();
     assert(atomic_top() == nullptr, "Must be");
     // Sync _top to _atomic_top to set the region as an active atomic alloc region
-    AtomicAccess::release_store(&_atomic_top, stable_top());
+    _atomic_top.release_store(stable_top());
   }
 
   // Unset a heap region as active alloc region,
@@ -628,7 +628,7 @@ public:
     while (true /*always break out in the loop*/) {
       assert(current_atomic_top != nullptr, "Must not");
       AtomicAccess::release_store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
-      prior_atomic_top = AtomicAccess::cmpxchg(&_atomic_top, current_atomic_top, (HeapWord*) nullptr, memory_order_release);
+      prior_atomic_top = _atomic_top.compare_exchange(current_atomic_top, (HeapWord*) nullptr, memory_order_release);
       if (prior_atomic_top == current_atomic_top) {
         // break out the loop when successfully exchange _atomic_top to nullptr
         break;

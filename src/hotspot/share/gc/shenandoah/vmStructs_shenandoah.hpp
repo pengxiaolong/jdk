@@ -42,12 +42,10 @@
   volatile_nonstatic_field(ShenandoahHeapRegion, _state,               Atomic<ShenandoahHeapRegion::RegionState>) \
   nonstatic_field(ShenandoahHeapRegion, _index,                        size_t const)                              \
   nonstatic_field(ShenandoahHeapRegion, _bottom,                       HeapWord* const)                           \
-  volatile_nonstatic_field(ShenandoahHeapRegion, _atomic_top,          HeapWord*)                                 \
   volatile_nonstatic_field(ShenandoahHeapRegion, _top,                 HeapWord*)                                 \
   nonstatic_field(ShenandoahHeapRegion, _tlab_allocs,                  Atomic<size_t>)                            \
   nonstatic_field(ShenandoahHeapRegion, _gclab_allocs,                 Atomic<size_t>)                            \
   nonstatic_field(ShenandoahHeapRegion, _plab_allocs,                  Atomic<size_t>)                            \
-  volatile_nonstatic_field(ShenandoahHeapRegion, _age,                 uint)                                      \
   CENSUS_NOISE(volatile_nonstatic_field(ShenandoahHeapRegion, _youth,  uint))                                     \
   nonstatic_field(ShenandoahHeapRegion, _end,                          HeapWord* const)                           \
   nonstatic_field(ShenandoahFreeSet, _total_global_used,               size_t)                                    \
