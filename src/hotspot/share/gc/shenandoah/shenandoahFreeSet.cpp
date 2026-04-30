@@ -1274,7 +1274,7 @@ void ShenandoahFreeSet::add_promoted_in_place_region_to_old_collector(Shenandoah
   } else {
     if (available_in_region >= ShenandoahHeap::min_fill_size() * HeapWordSize) {
       size_t fill_words = available_in_region / HeapWordSize;
-      ShenandoahHeap::heap()->old_generation()->card_scan()->register_object(region->top());
+      ShenandoahHeap::heap()->old_generation()->card_scan()->register_object(region->stable_top());
       region->allocate_fill(fill_words);
     }
     available_in_region = 0;
@@ -1483,7 +1483,7 @@ HeapWord* ShenandoahFreeSet::allocate_aligned_plab(size_t size, ShenandoahAllocR
 
   HeapWord* result = r->allocate_aligned(size, req, CardTable::card_size());
   assert(result != nullptr, "Allocation cannot fail");
-  assert(r->top() <= r->end(), "Allocation cannot span end of region");
+  assert(r->stable_top() <= r->end(), "Allocation cannot span end of region");
   assert(is_aligned(result, CardTable::card_size_in_words()), "Align by design");
   return result;
 }
@@ -1539,7 +1539,7 @@ HeapWord* ShenandoahFreeSet::try_allocate_in(ShenandoahHeapRegion* r, Shenandoah
   // req.size() is in words, r->free() is in bytes.
   if (req.is_lab_alloc()) {
     size_t adjusted_size = req.size();
-    size_t free = r->free();    // free represents bytes available within region r
+    size_t free = r->stable_free();    // free represents bytes available within region r
     if (req.is_old()) {
       // This is a PLAB allocation(lab alloc in old gen)
       assert(_heap->mode()->is_generational(), "PLABs are only for generational mode");
@@ -1599,7 +1599,7 @@ HeapWord* ShenandoahFreeSet::try_allocate_in(ShenandoahHeapRegion* r, Shenandoah
       // For GC allocations, we advance update_watermark because the objects relocated into this memory during
       // evacuation are not updated during evacuation.  For both young and old regions r, it is essential that all
       // PLABs be made parsable at the end of evacuation.  This is enabled by retiring all plabs at end of evacuation.
-      r->set_update_watermark(r->top());
+      r->set_update_watermark(r->stable_top());
       if (r->is_old()) {
         _partitions.increase_used(ShenandoahFreeSetPartitionId::OldCollector, (req.actual_size() + req.waste()) * HeapWordSize);
       } else {

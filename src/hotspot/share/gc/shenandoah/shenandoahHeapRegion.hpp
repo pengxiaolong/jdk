@@ -489,16 +489,27 @@ public:
     return AtomicAccess::load_acquire(&_atomic_top);
   }
 
-  // The field _top can be stale when the region is an atomic alloc region, therefore,
-  // it always checks the atomic top first if CHECK_ATOMIC_TOP is not overridden.
-  template<bool CHECK_ATOMIC_TOP = true>
+  // Default top(). Returns _atomic_top when the region is an active CAS alloc
+  // region, else _top. Safe to call from any context. Inside an active alloc
+  // region the returned value may advance concurrently; outside it is stable.
+  // Prefer this form unless you specifically need to assert that no
+  // concurrent allocation can be happening.
   HeapWord* top() const {
-    if (CHECK_ATOMIC_TOP) {
-      HeapWord* at = atomic_top();
-      return at == nullptr ? AtomicAccess::load_acquire(&_top) : at;
-    }
-    assert(!is_atomic_alloc_region(), "Must not be an atomic alloc region");
-    return _top;
+    HeapWord* at = atomic_top();
+    return at == nullptr ? AtomicAccess::load_acquire(&_top) : at;
+  }
+
+  // Stable top. Asserts the region is NOT an active CAS alloc region, so
+  // reading _top directly is guaranteed to observe the authoritative top.
+  // Use for callers that establish this invariant by construction, e.g.,
+  //   - while holding the heap lock outside of the active allocator paths,
+  //   - at a safepoint after release_alloc_regions(),
+  //   - on regions that never enter the active state (cset, trash,
+  //     humongous, newly-created, in-construction).
+  HeapWord* stable_top() const {
+    assert(!is_atomic_alloc_region(),
+           "Region is active for CAS alloc; use top() for a concurrent snapshot");
+    return AtomicAccess::load_acquire(&_top);
   }
 
   void set_top(HeapWord* v) {
@@ -520,10 +531,18 @@ public:
   HeapWord* end() const         { return _end;     }
 
   size_t capacity() const       { return byte_size(bottom(), end()); }
+  // used()/free()/free_words() use top(), which is safe in any context.
+  // For stable snapshots, use the stable_* variants which assert the region
+  // is not an active CAS alloc region.
   size_t used() const           { return byte_size(bottom(), top()); }
   size_t used_before_promote() const { return byte_size(bottom(), get_top_before_promote()); }
   size_t free() const           { return byte_size(top(),    end()); }
   size_t free_words() const     { return pointer_delta(end(), top()); }
+
+  size_t stable_used() const       { return byte_size(bottom(), stable_top()); }
+  size_t stable_free() const       { return byte_size(stable_top(), end()); }
+  size_t stable_free_words() const { return pointer_delta(end(), stable_top()); }
+
   size_t free_bytes_for_atomic_alloc() const {
     HeapWord* v_top = atomic_top();
     return v_top == nullptr ? 0 : byte_size(v_top,    end());
@@ -587,7 +606,7 @@ public:
     shenandoah_assert_heaplocked();
     assert(atomic_top() == nullptr, "Must be");
     // Sync _top to _atomic_top to set the region as an active atomic alloc region
-    AtomicAccess::release_store(&_atomic_top, top<false>());
+    AtomicAccess::release_store(&_atomic_top, stable_top());
   }
 
   // Unset a heap region as active alloc region,
@@ -616,7 +635,7 @@ public:
       }
       current_atomic_top = prior_atomic_top;
     }
-    assert(top<false>() == current_atomic_top, "Value of _atomic_top must have synced to _top");
+    assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
     assert(!is_atomic_alloc_region(), "Must not");
   }
 

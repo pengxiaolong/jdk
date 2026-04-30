@@ -92,7 +92,7 @@ HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
   assert(size >= ShenandoahHeap::min_fill_size(), "Cannot fill unless min fill size");
 
-  HeapWord* obj = top();
+  HeapWord* obj = stable_top();
   HeapWord* new_top = obj + size;
   ShenandoahHeap::fill_with_object(obj, size);
   set_top(new_top);
@@ -109,7 +109,7 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocReque
   assert(!is_atomic_alloc_region(), "Must not");
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
-  HeapWord* obj = top<false>();
+  HeapWord* obj = stable_top();
   if (pointer_delta(end(), obj) >= size) {
     make_regular_allocation(req.affiliation());
     adjust_alloc_metadata(req, size);
@@ -133,7 +133,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab(const ShenandoahAllocRequest& req, 
 
   size_t adjusted_size = req.size();
   HeapWord* obj = nullptr;
-  HeapWord* old_top = top<false>();
+  HeapWord* old_top = stable_top();
   size_t free_words = align_down(byte_size(old_top, end()) >> LogHeapWordSize, MinObjAlignment);
   if (adjusted_size > free_words) {
     adjusted_size = free_words;
@@ -343,7 +343,7 @@ inline bool ShenandoahHeapRegion::is_affiliated() const {
 inline void ShenandoahHeapRegion::save_top_before_promote() {
   assert(!is_atomic_alloc_region(), "Must not");
   assert(atomic_top() == nullptr, "Must be");
-  _top_before_promoted = top<false>();
+  _top_before_promoted = stable_top();
 }
 
 inline void ShenandoahHeapRegion::restore_top_before_promote() {

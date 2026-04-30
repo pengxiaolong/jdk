@@ -187,7 +187,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_from_free_set
     HeapWord *obj = allocate_in<false>(r, false, req, in_new_region, ready_for_retire);
     r->reset_age();
     if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-      r->set_update_watermark(r->top<false>());
+      r->set_update_watermark(r->stable_top());
     }
     assert(obj != nullptr, "Should always succeed.");
 
@@ -291,7 +291,7 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
       if (region != nullptr) {
         region->unset_active_alloc_region();
         if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-          region->set_update_watermark(region->top<false /*false to avoid loading _atomic_top*/>());
+          region->set_update_watermark(region->stable_top());
           region->set_collector_allocator_reserved(false);
         }
         log_debug(gc, alloc)("%sAllocator: Removing heap region %li from alloc region %i.",
@@ -373,7 +373,7 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
         _alloc_partition_name, r->index(), i);
       r->unset_active_alloc_region();
       if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-        r->set_update_watermark(r->top<false /*false to avoid loading _atomic_top*/>());
+        r->set_update_watermark(r->stable_top());
         r->set_collector_allocator_reserved(false);
       }
       alloc_region.address.release_store(nullptr);
