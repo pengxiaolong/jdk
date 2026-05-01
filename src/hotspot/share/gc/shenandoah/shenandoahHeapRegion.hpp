@@ -616,18 +616,30 @@ public:
     shenandoah_assert_heaplocked();
     assert(is_atomic_alloc_region(), "Must be");
 
-    // Before unset _active_alloc_region flag, _atomic_top needs to be set to sentinel value using AtomicAccess::cmpxchg,
-    // this avoids race condition when the alloc region removed from the alloc regions array used by lock-free allocation in allocator;
-    // meanwhile the previous value of _atomic_top needs to be synced back to _top.
+    // Retire the region from CAS allocation by resetting _atomic_top to
+    // nullptr, and sync the current _atomic_top back to _top so that readers
+    // going through top() (which falls back to _top when atomic_top() is
+    // nullptr) continue to see the correct high-water mark.
+    //
+    // Store order is load-bearing: _top must be updated BEFORE the CAS that
+    // resets _atomic_top. Any reader that observes atomic_top() == nullptr
+    // has, by the acquire load in atomic_top(), also observed the release CAS
+    // below, and therefore the preceding release_store to _top. Storing _top
+    // after the CAS would open a window in which a reader sees
+    // atomic_top() == nullptr with a stale _top and concludes, incorrectly,
+    // that a just-allocated object lies past top().
+    //
+    // The CAS may fail if a concurrent allocator bumped _atomic_top. On
+    // retry, current_atomic_top only grows, so re-storing it to _top is
+    // monotonic.
     HeapWord* const top_before_sync = _top;
     HeapWord* prior_atomic_top = nullptr;
     HeapWord* current_atomic_top = atomic_top();
     while (true /*always break out in the loop*/) {
       assert(current_atomic_top != nullptr, "Must not");
+      AtomicAccess::release_store(&_top, current_atomic_top);
       prior_atomic_top = _atomic_top.compare_exchange(current_atomic_top, (HeapWord*) nullptr, memory_order_release);
       if (prior_atomic_top == current_atomic_top) {
-        AtomicAccess::release_store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
-        // break out the loop when successfully exchange _atomic_top to nullptr
         break;
       }
       current_atomic_top = prior_atomic_top;
