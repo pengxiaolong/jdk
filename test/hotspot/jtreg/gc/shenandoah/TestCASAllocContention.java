@@ -27,7 +27,7 @@
  * @summary Multi-threaded CAS allocation stress with default alloc regions
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
  */
@@ -37,7 +37,7 @@
  * @summary Force all mutator threads onto a single alloc region slot
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahMutatorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
@@ -48,7 +48,7 @@
  * @summary Many alloc region slots, typically more than actively used
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahMutatorAllocRegions=128 -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
@@ -59,7 +59,7 @@
  * @summary Default alloc regions with generational mode
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
@@ -70,7 +70,7 @@
  * @summary Generational mode with maximum contention on one mutator slot
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational -XX:ShenandoahMutatorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention

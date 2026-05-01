@@ -27,7 +27,7 @@
  * @summary Smoke test for CAS allocator with default alloc-regions settings
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
  */
@@ -37,7 +37,7 @@
  * @summary Single mutator alloc region (maximum contention on one slot)
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahMutatorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -48,7 +48,7 @@
  * @summary Maximum mutator alloc regions
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahMutatorAllocRegions=128
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -59,7 +59,7 @@
  * @summary Single collector alloc region
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahCollectorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -70,7 +70,7 @@
  * @summary Maximum collector alloc regions
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -81,7 +81,7 @@
  * @summary Minimum alloc regions for both mutator and collector
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahMutatorAllocRegions=1 -XX:ShenandoahCollectorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -92,7 +92,7 @@
  * @summary Default alloc regions with generational mode
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -103,7 +103,7 @@
  * @summary Generational mode with single mutator alloc region
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational -XX:ShenandoahMutatorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
@@ -114,7 +114,7 @@
  * @summary Generational mode with maximum alloc regions
  * @requires vm.gc.Shenandoah
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockExperimentalVMOptions
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational
  *      -XX:ShenandoahMutatorAllocRegions=128 -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
