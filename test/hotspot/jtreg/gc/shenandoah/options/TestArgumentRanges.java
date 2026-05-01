@@ -40,6 +40,8 @@ public class TestArgumentRanges {
         testRange("ShenandoahGarbageThreshold", 0, 100);
         testRange("ShenandoahMinFreeThreshold", 0, 100);
         testRange("ShenandoahAllocationThreshold", 0, 100);
+        testRange("ShenandoahMutatorAllocRegions", 1, 128);
+        testRange("ShenandoahCollectorAllocRegions", 1, 32);
         testHeuristics();
     }
 
