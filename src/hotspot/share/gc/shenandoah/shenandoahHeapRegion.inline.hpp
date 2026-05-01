@@ -159,7 +159,6 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(size_t size, const ShenandoahAll
     size_t free_words = pointer_delta(end(), obj);
     if (free_words >= size) {
       if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
-        reset_age();
         adjust_alloc_metadata(req, size);
         ready_for_retire = (free_words - size) < PLAB::min_size();
         return obj;

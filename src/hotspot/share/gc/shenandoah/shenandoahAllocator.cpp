@@ -409,6 +409,10 @@ void ShenandoahAllocator<ALLOC_PARTITION>::reserve_alloc_regions() {
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 size_t ShenandoahAllocator<ALLOC_PARTITION>::remaining_bytes() {
+  // Heap lock guards the slot pointers; load_relaxed is sufficient under it.
+  // r->free() may still observe a concurrently advancing _atomic_top, which
+  // is fine for heuristic callers.
+  shenandoah_assert_heaplocked();
   size_t remaining_bytes = 0;
   for (uint i = 0; i < _alloc_region_count; i++) {
     ShenandoahHeapRegion* r = _alloc_regions[i].address.load_relaxed();
