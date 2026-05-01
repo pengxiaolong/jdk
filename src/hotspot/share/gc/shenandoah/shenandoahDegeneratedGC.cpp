@@ -306,6 +306,15 @@ void ShenandoahDegenGC::op_degenerated() {
 
       op_cleanup_complete();
 
+      if (_abbreviated) {
+        // The abbreviated path skips op_update_roots() which is the only place
+        // that calls rebuild_free_set() (and thus reserve_alloc_regions()).
+        // Reserve mutator alloc regions here so mutators don't all hit the
+        // heap lock on their first allocation after the pause.
+        ShenandoahHeapLocker locker(heap->lock());
+        heap->free_set()->mutator_allocator()->reserve_alloc_regions();
+      }
+
       if (heap->mode()->is_generational()) {
         ShenandoahGenerationalHeap::heap()->complete_degenerated_cycle();
       }
