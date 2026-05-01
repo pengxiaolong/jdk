@@ -37,7 +37,7 @@ enum class ShenandoahFreeSetPartitionId : uint8_t {
   NotFree                       // Region is in no free set: it has no available memory.  Consult region affiliation
                                 //    to determine whether this retired region is young or old.  If young, the region
                                 //    is considered to be part of the Mutator partition.  (When we retire from the
-                                //    Collector partition, we decrease total_region_count for Collector and increaese
+                                //    Collector partition, we decrease total_region_count for Collector and increase
                                 //    for Mutator, making similar adjustments to used (net impact on available is neutral).
 };
 

@@ -172,7 +172,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_slow(Shenando
     return obj;
   }
 
-  log_debug(gc, alloc)("%sAllocator: Failed to allocate satisfy the alloc request, request size: %lu",
+  log_debug(gc, alloc)("%sAllocator: Failed to satisfy the alloc request, request size: %zu",
     _alloc_partition_name, req.size());
   return nullptr;
 }
@@ -205,7 +205,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::attempt_allocation_from_free_set
     }
     return obj;
   }
-  log_debug(gc, alloc)("%sAllocator: Didn't find one region with at least %lu free words to satisfy the alloc request, request size: %lu",
+  log_debug(gc, alloc)("%sAllocator: Didn't find one region with at least %zu free words to satisfy the alloc request, request size: %zu",
                        _alloc_partition_name, min_free_words, req.size());
   return nullptr;
 }
@@ -258,7 +258,7 @@ HeapWord* ShenandoahAllocator<ALLOC_PARTITION>::allocate_in(ShenandoahHeapRegion
   }
   if (obj != nullptr) {
     assert(actual_size > 0, "Must be");
-    log_debug(gc, alloc)("%sAllocator: Allocated %lu bytes from heap region %lu, request size: %lu, alloc region: %s, remnant: %lu",
+    log_debug(gc, alloc)("%sAllocator: Allocated %zu bytes from heap region %zu, request size: %zu, alloc region: %s, remnant: %zu",
       _alloc_partition_name, actual_size * HeapWordSize, region->index(), req.size() * HeapWordSize, is_alloc_region ? "true" : "false", region->free());
     req.set_actual_size(actual_size);
     in_new_region = obj == region->bottom(); // is in new region when the allocated object is at the bottom of the region.
@@ -294,7 +294,7 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
           region->set_update_watermark(region->stable_top());
           region->set_collector_allocator_reserved(false);
         }
-        log_debug(gc, alloc)("%sAllocator: Removing heap region %li from alloc region %i.",
+        log_debug(gc, alloc)("%sAllocator: Removing heap region %zu from alloc region %i.",
           _alloc_partition_name, region->index(), alloc_region->alloc_region_index);
         alloc_region->address.release_store(nullptr);
       }
@@ -328,7 +328,7 @@ int ShenandoahAllocator<ALLOC_PARTITION>::replenish_alloc_regions(ShenandoahAllo
           reserved[i]->set_collector_allocator_reserved(true);
         }
         reserved[i]->set_active_alloc_region();
-        log_debug(gc, alloc)("%sAllocator: Storing heap region %li to alloc region %i",
+        log_debug(gc, alloc)("%sAllocator: Storing heap region %zu to alloc region %i",
           _alloc_partition_name, reserved[i]->index(), replenishable[i]->alloc_region_index);
         replenishable[i]->address.release_store(reserved[i]);
       }
@@ -369,7 +369,7 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
     ShenandoahAllocRegion& alloc_region = _alloc_regions[i];
     ShenandoahHeapRegion* r = alloc_region.address.load_relaxed();
     if (r != nullptr) {
-      log_debug(gc, alloc)("%sAllocator: Releasing heap region %li from alloc region %i",
+      log_debug(gc, alloc)("%sAllocator: Releasing heap region %zu from alloc region %i",
         _alloc_partition_name, r->index(), i);
       r->unset_active_alloc_region();
       if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {

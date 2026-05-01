@@ -2649,7 +2649,7 @@ void ShenandoahHeap::rebuild_free_set_within_phase(const bool release_atomic_all
   // Rebuild free set based on adjusted generation sizes.
   _free_set->finish_rebuild(young_trashed_regions, old_trashed_regions, old_region_count);
 
-    // Reserve alloc regions for mutator after finishing rebuild.
+  // Reserve alloc regions for mutator after finishing rebuild.
   _free_set->mutator_allocator()->reserve_alloc_regions();
 
   if (mode()->is_generational()) {

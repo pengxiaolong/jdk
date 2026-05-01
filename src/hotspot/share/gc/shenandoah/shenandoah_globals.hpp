@@ -590,7 +590,7 @@
                                                                             \
   product(uintx, ShenandoahCollectorAllocRegions, 4, EXPERIMENTAL,          \
          "Number of alloc regions for collector allocation.")               \
-         range(1, 32)                                                       \
+         range(1, 32)
 
   // end of GC_SHENANDOAH_FLAGS
 

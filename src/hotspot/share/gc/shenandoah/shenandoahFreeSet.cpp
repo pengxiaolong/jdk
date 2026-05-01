@@ -674,7 +674,7 @@ void ShenandoahRegionPartitions::unretire_to_partition(ShenandoahHeapRegion* r, 
   shenandoah_assert_heaplocked();
   make_free(r->index(), which_partition, r->free());
   if (!r->has_allocs()) {
-    log_debug(gc, alloc)("%sAllocator: Reverting heap region %li to FREE due to no alloc in the region",
+    log_debug(gc, alloc)("%sAllocator: Reverting heap region %zu to FREE due to no alloc in the region",
       partition_name(which_partition), r->index());
     r->make_empty();
     r->set_affiliation(FREE);
@@ -945,7 +945,7 @@ void ShenandoahRegionPartitions::assert_bounds() {
             capacities[int(ShenandoahFreeSetPartitionId::OldCollector)] += _region_size_bytes;
             humongous_waste[int(ShenandoahFreeSetPartitionId::OldCollector)] += capacity;
           } else {
-            assert(r->is_young(), "Must be young if not old, region: %lu", i);
+            assert(r->is_young(), "Must be young if not old, region: %zu", i);
             young_retired_regions++;
             // Count entire region as used even if there is some waste.
             young_retired_used += _region_size_bytes;
@@ -963,7 +963,7 @@ void ShenandoahRegionPartitions::assert_bounds() {
             used[int(ShenandoahFreeSetPartitionId::OldCollector)] += _region_size_bytes - capacity;
             capacities[int(ShenandoahFreeSetPartitionId::OldCollector)] += _region_size_bytes;
           } else {
-            assert(r->is_young(), "Must be young if not old, region: %lu", i);
+            assert(r->is_young(), "Must be young if not old, region: %zu", i);
             young_retired_regions++;
             young_retired_used += _region_size_bytes - capacity;
             young_retired_capacity += _region_size_bytes;
@@ -976,7 +976,7 @@ void ShenandoahRegionPartitions::assert_bounds() {
       case ShenandoahFreeSetPartitionId::Collector:
       case ShenandoahFreeSetPartitionId::OldCollector:
       {
-        assert(capacity > 0, "free regions must have allocation capacity, region: %lu", i);
+        assert(capacity > 0, "free regions must have allocation capacity, region: %zu", i);
         bool is_empty = (capacity == _region_size_bytes);
         regions[int(partition)]++;
         used[int(partition)] += _region_size_bytes - capacity;
@@ -3330,7 +3330,7 @@ ShenandoahHeapRegion* ShenandoahFreeSet::find_heap_region_for_allocation(size_t 
     // Steal one FREE region from Mutator view for gc
     region = steal_heap_region_from_mutator_for_allocation<ALLOC_PARTITION>();
     if (region != nullptr) {
-      log_debug(gc, alloc)("Stealing Region %li from Mutator to %s for allocation.", region->index(), ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION));
+      log_debug(gc, alloc)("Stealing Region %zu from Mutator to %s for allocation.", region->index(), ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION));
       new_region = true;
     }
   }
