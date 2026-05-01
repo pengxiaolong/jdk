@@ -619,21 +619,22 @@ public:
     // Before unset _active_alloc_region flag, _atomic_top needs to be set to sentinel value using AtomicAccess::cmpxchg,
     // this avoids race condition when the alloc region removed from the alloc regions array used by lock-free allocation in allocator;
     // meanwhile the previous value of _atomic_top needs to be synced back to _top.
+    HeapWord* const top_before_sync = _top;
     HeapWord* prior_atomic_top = nullptr;
     HeapWord* current_atomic_top = atomic_top();
-    if (current_atomic_top > _top) {
-      // reset age if there was any allocation in the region after it's reserved as alloc region.
-      reset_age();
-    }
     while (true /*always break out in the loop*/) {
       assert(current_atomic_top != nullptr, "Must not");
-      AtomicAccess::release_store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
       prior_atomic_top = _atomic_top.compare_exchange(current_atomic_top, (HeapWord*) nullptr, memory_order_release);
       if (prior_atomic_top == current_atomic_top) {
+        AtomicAccess::release_store(&_top, current_atomic_top); // Sync current _atomic_top back to _top
         // break out the loop when successfully exchange _atomic_top to nullptr
         break;
       }
       current_atomic_top = prior_atomic_top;
+    }
+    if (current_atomic_top > top_before_sync) {
+      // reset age if there was any allocation in the region after it's reserved as alloc region.
+      reset_age();
     }
     assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
     assert(!is_atomic_alloc_region(), "Must not");
