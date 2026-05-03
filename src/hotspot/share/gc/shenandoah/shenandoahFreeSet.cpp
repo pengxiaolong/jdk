@@ -319,6 +319,11 @@ void ShenandoahFreeSet::reset_bytes_allocated_since_gc_start(size_t initial_byte
   _total_bytes_previously_allocated += original_mutator_bytes_allocated_since_gc_start - initial_bytes_allocated;
 }
 
+// See the comment at reserve_alloc_regions_internal for the pairing:
+// reserve inflates _mutator_bytes_allocated_since_gc_start by the full remnant
+// of each reserved region, and release/heuristics compensate by subtracting
+// mutator_allocator()->remaining_bytes() at read time. This lets the CAS fast
+// path skip any partition bookkeeping.
 void ShenandoahFreeSet::increase_bytes_allocated(size_t bytes) {
   shenandoah_assert_heaplocked();
   _mutator_bytes_allocated_since_gc_start += bytes;
@@ -3284,6 +3289,15 @@ int ShenandoahFreeSet::reserve_alloc_regions_internal(Iter iterator, int const r
     // The region still have capacity for at least one lab alloc
     size_t reserved_bytes = partitions()->retire_from_partition(ALLOC_PARTITION, r->index(), r->used());
     if (ALLOC_PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
+      // Account the entire reserved remnant as "allocated since gc start" up front, so
+      // that the CAS fast path (ShenandoahHeapRegion::allocate_atomic /
+      // allocate_lab_atomic) can advance _atomic_top without touching any partition
+      // counters. Readers that want "bytes actually consumed by the mutator" subtract
+      // mutator_allocator()->remaining_bytes() (e.g. heuristics' allocation-rate
+      // calculations and ShenandoahHeap::reset_bytes_allocated_since_gc_start).
+      // On release_alloc_regions, any still-unconsumed remnant is symmetrically
+      // removed via decrease_bytes_allocated, so the net over a reserve/consume/release
+      // cycle is exactly the bytes the mutator actually allocated.
       increase_bytes_allocated(reserved_bytes);
     }
   }

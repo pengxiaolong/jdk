@@ -423,6 +423,10 @@ bool ShenandoahAdaptiveHeuristics::should_start_gc() {
     capacity = ShenandoahHeap::heap()->soft_max_capacity();
     mutator_allocator_remaining = heap->free_set()->mutator_allocator()->remaining_bytes();
     available = _space_info->soft_mutator_available() + mutator_allocator_remaining;
+    // bytes_allocated_since_gc_start is inflated at reserve time by the full remnant
+    // of each reserved mutator alloc region; subtract the still-unconsumed portion
+    // to get "actually allocated by Java threads". See
+    // ShenandoahFreeSet::reserve_alloc_regions_internal.
     allocated = _space_info->bytes_allocated_since_gc_start() - mutator_allocator_remaining;
     allocated_bytes_since_last_sample = _free_set->get_bytes_allocated_since_previous_sample(mutator_allocator_remaining);
   }

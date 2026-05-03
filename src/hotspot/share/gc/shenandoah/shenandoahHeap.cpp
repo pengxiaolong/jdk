@@ -2395,6 +2395,10 @@ void ShenandoahHeap::reset_bytes_allocated_since_gc_start() {
     size_t unaccounted_bytes;
     size_t bytes_allocated = _free_set->get_bytes_allocated_since_gc_start();
     size_t mutator_allocator_remaining_bytes = _free_set->mutator_allocator()->remaining_bytes();
+    // bytes_allocated is inflated at reserve time by the full remnant of each reserved
+    // mutator alloc region (see ShenandoahFreeSet::reserve_alloc_regions_internal).
+    // Subtract the still-unconsumed portion of those regions to recover "actually
+    // allocated by Java threads" for the allocation-rate sampler.
     size_t actual_allocated = bytes_allocated - mutator_allocator_remaining_bytes;
     if (mode()->is_generational()) {
       unaccounted_bytes = young_generation()->heuristics()->force_alloc_rate_sample(actual_allocated);
