@@ -311,7 +311,8 @@ void ShenandoahAdaptiveHeuristics::record_success_concurrent() {
   // Should we not add GC time if this was an abbreviated cycle?
   add_gc_time(_cycle_start, elapsed_cycle_time());
 
-  size_t available = _space_info->available();
+  size_t available = _space_info->available()
+                   + ShenandoahHeap::heap()->free_set()->mutator_allocator()->remaining_bytes();
 
   double z_score = 0.0;
   double available_sd = _available.sd();

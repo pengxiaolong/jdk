@@ -75,7 +75,21 @@ size_t ShenandoahGenerationalHeap::calculate_max_plab() {
 
 // Returns size in bytes
 size_t ShenandoahGenerationalHeap::unsafe_max_tlab_alloc() const {
-  return MIN2(ShenandoahHeapRegion::max_tlab_size_bytes(), young_generation()->available());
+  const size_t max_tlab = ShenandoahHeapRegion::max_tlab_size_bytes();
+  const size_t gen_available = young_generation()->available();
+  // Fast path: if the generation's partition-view available is at least a
+  // full max TLAB, the MIN2 result is max_tlab regardless of the bytes still
+  // held inside the mutator allocator's active CAS alloc regions. Skip
+  // summing the allocator's per-slot free bytes, which is O(N) over the
+  // number of alloc-region slots and is called on every TLAB refill.
+  if (gen_available >= max_tlab) {
+    return max_tlab;
+  }
+  // Slow path: the partition view alone is not enough. Account for the bytes
+  // still free inside the mutator allocator's active regions, which are
+  // retired from the Mutator partition at reservation time and therefore
+  // not reflected in young_generation()->available().
+  return MIN2(max_tlab, gen_available + free_set()->mutator_allocator()->remaining_bytes());
 }
 
 ShenandoahGenerationalHeap::ShenandoahGenerationalHeap(ShenandoahCollectorPolicy* policy) :
