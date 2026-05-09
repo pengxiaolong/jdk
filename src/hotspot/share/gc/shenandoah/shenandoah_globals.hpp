@@ -590,7 +590,19 @@
                                                                             \
   product(uintx, ShenandoahCollectorAllocRegions, 4, EXPERIMENTAL,          \
          "Number of alloc regions for collector allocation.")               \
-         range(1, 32)
+         range(1, 32)                                                       \
+                                                                            \
+  product(double, ShenandoahAllocBalanceThreshold, 0.7, EXPERIMENTAL,       \
+         "Jain's Fairness Index threshold for mutator alloc region "        \
+         "balance. When the index drops below this value, mutator "         \
+         "threads are rebalanced across alloc regions. "                    \
+         "1.0 means perfectly balanced, lower values allow more skew.")     \
+         range(0.0, 1.0)                                                    \
+                                                                            \
+  product(uintx, ShenandoahAllocBalanceCheckInterval, 10, EXPERIMENTAL,     \
+         "Number of GC cycles between mutator alloc region balance "        \
+         "checks.")                                                         \
+         range(1, 10000)
 
   // end of GC_SHENANDOAH_FLAGS
 

@@ -55,6 +55,7 @@ protected:
   // Fields often get updated
   ShenandoahAllocRegion              _alloc_regions[MAX_ALLOC_REGION_COUNT];
   Atomic<uint32_t>                   _epoch_id; // epoch id of _alloc_regions, increase by 1 whenever replenish _alloc_regions.
+  unsigned int                       _last_rebalance_gc_cycle; // total_collections() when last rebalance check was performed
 
 
   // Start index of the shared alloc regions where the allocation will start from.
@@ -104,6 +105,12 @@ protected:
 
   // replenish new alloc regions, allocate the object in the new alloc region before making the new alloc region visible to other mutators.
   int replenish_alloc_regions(ShenandoahAllocRequest* req = nullptr, bool* in_new_region = nullptr, HeapWord** obj = nullptr);
+
+  // Check if mutator threads are evenly spread across alloc regions using Jain's Fairness Index.
+  // If the index falls below ShenandoahAllocBalanceThreshold, reset all mutator threads'
+  // start indices to force re-randomization on their next allocation.
+  // Caller must hold the heap lock.
+  void check_and_rebalance();
 
 #ifdef ASSERT
   void verify(ShenandoahAllocRequest& req) {

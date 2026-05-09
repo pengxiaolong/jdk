@@ -29,11 +29,13 @@
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "memory/padded.inline.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
+#include "runtime/threads.hpp"
+#include "runtime/threadSMR.hpp"
 #include "utilities/globalDefinitions.hpp"
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 ShenandoahAllocator<ALLOC_PARTITION>::ShenandoahAllocator(uint const alloc_region_count, ShenandoahFreeSet* free_set, bool yield_to_safepoint):
-  _free_set(free_set), _alloc_partition_name(ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION)), _alloc_region_count(alloc_region_count), _yield_to_safepoint(yield_to_safepoint), _epoch_id(0u) {
+  _free_set(free_set), _alloc_partition_name(ShenandoahRegionPartitions::partition_name(ALLOC_PARTITION)), _alloc_region_count(alloc_region_count), _yield_to_safepoint(yield_to_safepoint), _epoch_id(0u), _last_rebalance_gc_cycle(0u) {
   if (alloc_region_count > 0) {
     for (uint i = 0; i < alloc_region_count; i++) {
       _alloc_regions[i].address.store_relaxed(nullptr);
@@ -399,8 +401,70 @@ void ShenandoahAllocator<ALLOC_PARTITION>::release_alloc_regions(bool should_upd
 }
 
 template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
+void ShenandoahAllocator<ALLOC_PARTITION>::check_and_rebalance() {
+  if (ALLOC_PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+    return;
+  }
+  if (_alloc_region_count <= 1) {
+    return;
+  }
+  if (!SafepointSynchronize::is_at_safepoint()) {
+    return;
+  }
+
+  unsigned int current_gc_cycle = ShenandoahHeap::heap()->total_collections();
+  if (current_gc_cycle - _last_rebalance_gc_cycle < ShenandoahAllocBalanceCheckInterval) {
+    return;
+  }
+  _last_rebalance_gc_cycle = current_gc_cycle;
+
+  shenandoah_assert_heaplocked();
+
+  // Count how many threads are assigned to each alloc region
+  uint counts[MAX_ALLOC_REGION_COUNT] = {0};
+  uint total_threads = 0;
+
+  for (JavaThreadIteratorWithHandle jtiwh; JavaThread* t = jtiwh.next(); ) {
+    uint idx = ShenandoahThreadLocalData::mutator_allocator_start_index(t);
+    if (idx != UINT_MAX && idx < _alloc_region_count) {
+      counts[idx]++;
+      total_threads++;
+    }
+  }
+
+  if (total_threads <= _alloc_region_count) {
+    return;
+  }
+
+  // Compute Jain's Fairness Index: (sum(xi))^2 / (n * sum(xi^2))
+  uint64_t sum = 0;
+  uint64_t sum_sq = 0;
+  for (uint i = 0; i < _alloc_region_count; i++) {
+    sum += counts[i];
+    sum_sq += (uint64_t)counts[i] * counts[i];
+  }
+
+  // JFI = sum^2 / (n * sum_sq), where n = _alloc_region_count
+  double jfi = (sum_sq == 0) ? 1.0 : (double)(sum * sum) / ((double)_alloc_region_count * sum_sq);
+
+  if (jfi < ShenandoahAllocBalanceThreshold) {
+    log_info(gc, alloc)("%sAllocator: Rebalancing mutator threads (JFI=%.3f < threshold=%.3f, threads=%u, regions=%u)",
+                        _alloc_partition_name, jfi, ShenandoahAllocBalanceThreshold, total_threads, _alloc_region_count);
+
+    // Reset all mutator threads' start index to force re-randomization
+    for (JavaThreadIteratorWithHandle jtiwh; JavaThread* t = jtiwh.next(); ) {
+      ShenandoahThreadLocalData::reset_mutator_allocator_start_index(t);
+    }
+  } else {
+    log_debug(gc, alloc)("%sAllocator: Thread balance OK (JFI=%.3f, threshold=%.3f, threads=%u, regions=%u)",
+                         _alloc_partition_name, jfi, ShenandoahAllocBalanceThreshold, total_threads, _alloc_region_count);
+  }
+}
+
+template <ShenandoahFreeSetPartitionId ALLOC_PARTITION>
 void ShenandoahAllocator<ALLOC_PARTITION>::reserve_alloc_regions() {
   shenandoah_assert_heaplocked();
+  check_and_rebalance();
   ShenandoahHeapAccountingUpdater accounting_updater(_free_set, ALLOC_PARTITION);
   if (replenish_alloc_regions() > 0) {
     accounting_updater._need_update = true;

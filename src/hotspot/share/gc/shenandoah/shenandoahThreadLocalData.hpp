@@ -181,8 +181,16 @@ public:
     return data(Thread::current())->_mutator_allocator_start_index;
   }
 
+  static uint mutator_allocator_start_index(Thread* thread) {
+    return data(thread)->_mutator_allocator_start_index;
+  }
+
   static void set_mutator_allocator_start_index(uint start_index) {
     data(Thread::current())->_mutator_allocator_start_index = start_index;
+  }
+
+  static void reset_mutator_allocator_start_index(Thread* thread) {
+    data(thread)->_mutator_allocator_start_index = UINT_MAX;
   }
 
   static uint collector_allocator_start_index() {
