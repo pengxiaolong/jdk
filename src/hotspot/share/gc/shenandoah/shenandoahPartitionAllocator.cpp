@@ -61,16 +61,16 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
            _retained_region->index());
     HeapWord* result = nullptr;
     size_t ac_words = _retained_region->free() >> LogHeapWordSize;
+    // A region is only ever retained while it has at least PLAB::min_size of capacity, and its
+    // free space shrinks only via allocate_in (which retires and clears it below that threshold).
+    // So the retained region always has usable capacity here: use it when it can satisfy this
+    // request, otherwise keep it retained for a smaller future request and fall through.
+    assert(ac_words >= PLAB::min_size(),
+           "Retained region %zu must keep at least PLAB::min_size capacity, has %zu words",
+           _retained_region->index(), ac_words);
     if (ac_words >= min_req_words) {
       result = allocate_in(_retained_region, req, boundary_changed);
-    } else if (ac_words < PLAB::min_size()) {
-      // Retained region is too small for any future PLAB; retire it.
-      _free_set->retire_region(PARTITION, _retained_region->index(), _retained_region->used());
-      boundary_changed = true;
-      _retained_region = nullptr;
     }
-    // else: retained region can't satisfy this request but still has usable capacity for
-    // a smaller future LAB. Keep it retained.
     if (result != nullptr) {
       in_new_region = false;
       _free_set->notify_allocation(PARTITION, false, boundary_changed);
@@ -107,11 +107,8 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     }
   }
 
-  // No allocation happened, but the retained region may have been retired above.
-  // Flush the resulting boundary change so partition bookkeeping stays consistent.
-  if (boundary_changed) {
-    _free_set->notify_allocation(PARTITION, /* in_new_region */ false, /* boundary_changed */ true);
-  }
+  // Every path that mutates a partition boundary (allocate_in retire, new region, steal) returns
+  // above, so reaching here means no allocation and no boundary change.
   return nullptr;
 }
 
