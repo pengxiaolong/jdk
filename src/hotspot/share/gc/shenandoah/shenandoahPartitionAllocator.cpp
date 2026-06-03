@@ -92,8 +92,10 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
         assert(stolen->is_empty(), "Stolen region must be empty");
         HeapWord* result = allocate_in(stolen, req, boundary_changed);
         _free_set->mark_region_used(PARTITION);
+        in_new_region = true;
+        boundary_changed = true;
         // Stealing always produces a new region, which implies a boundary change.
-        _free_set->notify_allocation(PARTITION, /* in_new_region */ true, /* boundary_changed */ true);
+        _free_set->notify_allocation(PARTITION, in_new_region, in_new_region);
         return result;
       }
     }
