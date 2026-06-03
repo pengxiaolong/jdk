@@ -1039,8 +1039,10 @@ HeapWord* ShenandoahHeap::allocate_memory_work(ShenandoahAllocRequest& req, bool
         old_generation()->configure_plab_for_current_thread(req);
       } else if (req.is_promotion()) {
         const size_t actual_size = req.actual_size() * HeapWordSize;
-        log_debug(gc, plab)("Expend shared promotion of %zu bytes", actual_size);
-        old_generation()->expend_promoted(actual_size);
+        // Atomic reserve so concurrent GC workers can't over-expend the promotion budget without the lock.
+        if (!old_generation()->try_expend_promoted(actual_size)) {
+          log_debug(gc, plab)("Shared promotion of %zu bytes exceeded promotion reserve", actual_size);
+        }
       }
     }
   }
