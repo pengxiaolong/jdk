@@ -371,7 +371,12 @@ ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc(size_t min_size_w
       r->try_recycle_under_lock();
       if (r->is_empty()) {
         if (free_region == nullptr) free_region = r;
-        if (alloc_capacity(r) >= min_size_bytes) { result = r; return; }
+        // Mutator takes the first region with capacity. Collectors prefer an affiliated region
+        // and only fall back to an empty region (below) to preserve free regions.
+        if (PARTITION == ShenandoahFreeSetPartitionId::Mutator && alloc_capacity(r) >= min_size_bytes) {
+          result = r;
+          return;
+        }
       } else if (r->affiliation() == affiliation) {
         if (alloc_capacity(r) >= min_size_bytes) { result = r; return; }
       }
