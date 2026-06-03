@@ -55,8 +55,9 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   if (_retained_region != nullptr) {
     constexpr ShenandoahAffiliation affiliation =
       (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) ? OLD_GENERATION : YOUNG_GENERATION;
-    assert(!_retained_region->is_trash() && _retained_region->affiliation() == affiliation,
-           "Retained region %zu must stay affiliated to this partition until the free set is rebuilt",
+    assert(!_retained_region->is_trash() && _retained_region->affiliation() == affiliation &&
+           _free_set->membership(_retained_region->index()) == PARTITION,
+           "Retained region %zu must remain a non-trash member of this partition until the free set is rebuilt",
            _retained_region->index());
     HeapWord* result = nullptr;
     size_t ac_words = _retained_region->free() >> LogHeapWordSize;
