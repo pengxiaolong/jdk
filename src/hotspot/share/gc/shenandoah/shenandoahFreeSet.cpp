@@ -351,7 +351,11 @@ size_t ShenandoahFreeSet::retire_region(ShenandoahFreeSetPartitionId partition, 
 template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc(size_t min_size_words, bool& in_new_region) {
   shenandoah_assert_heaplocked();
-  update_allocation_bias();
+  // Allocation bias is a Mutator-only heuristic; updating it for collector allocations would
+  // perturb mutator placement and burn down the shared bias weight.
+  if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
+    update_allocation_bias();
+  }
 
   if (_partitions.is_empty(PARTITION)) {
     return nullptr;
