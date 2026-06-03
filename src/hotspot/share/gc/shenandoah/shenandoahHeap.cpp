@@ -1027,6 +1027,13 @@ inline bool ShenandoahHeap::should_retry_allocation(size_t original_full_gc_coun
 }
 
 HeapWord* ShenandoahHeap::allocate_memory_work(ShenandoahAllocRequest& req, bool& in_new_region) {
+  // Reserve the promotion budget up front so it is enforced atomically without the heap lock.
+  // If the reserve is exhausted, deny the promotion rather than overshoot it; the reservation
+  // is refunded below if the allocation itself fails.
+  if (req.is_promotion() && !old_generation()->try_expend_promoted(req.size() << LogHeapWordSize)) {
+    return nullptr;
+  }
+
   HeapWord* result = _allocator->allocate(req, in_new_region);
 
   if (result != nullptr) {
@@ -1038,17 +1045,13 @@ HeapWord* ShenandoahHeap::allocate_memory_work(ShenandoahAllocRequest& req, bool
       if (req.is_lab_alloc()) {
         old_generation()->configure_plab_for_current_thread(req);
       } else if (req.is_promotion()) {
-        const size_t actual_size = req.actual_size() * HeapWordSize;
-        // The object has already been promoted into old-gen, so account for it unconditionally.
-        // can_allocate() gated this promotion against the reserve under the heap lock, but the
-        // lock is released before we get here; a conditional reservation could fail under
-        // concurrent expends and silently lose accounting, leading to unbounded over-promotion.
-        log_debug(gc, plab)("Expend shared promotion of %zu bytes", actual_size);
-        old_generation()->expend_promoted(actual_size);
+        log_debug(gc, plab)("Expend shared promotion of %zu bytes", req.actual_size() * HeapWordSize);
       }
     }
+  } else if (req.is_promotion()) {
+    // Allocation failed, so refund the promotion budget reserved above.
+    old_generation()->unexpend_promoted(req.size() << LogHeapWordSize);
   }
-
   return result;
 }
 

@@ -116,12 +116,6 @@ public:
   // Use this to gate a promotion decision before promoting.
   bool try_expend_promoted(size_t increment);
 
-  // Unconditionally account `increment` bytes that have already been promoted into old-gen.
-  // Unlike try_expend_promoted, this never fails: the promotion has happened, so the budget
-  // must reflect it to stay truthful (it may briefly overshoot the reserve under concurrency).
-  // Lock-free: safe to call without the heap lock.
-  size_t expend_promoted(size_t increment);
-
   // This is used to return unused memory from a retired promotion LAB
   size_t unexpend_promoted(size_t decrement);
 

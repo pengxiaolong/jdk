@@ -44,7 +44,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
 
   // OldCollector: verify old generation has room before attempting allocation.
   if constexpr (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) {
-    if (!ShenandoahHeap::heap()->old_generation()->can_allocate(req)) {
+    if (!req.is_promotion() && !ShenandoahHeap::heap()->old_generation()->can_allocate(req)) {
       return nullptr;
     }
   }
