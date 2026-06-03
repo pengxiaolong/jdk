@@ -155,8 +155,10 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     if (_retained_region == r) {
       _retained_region = nullptr;
     }
-  } else if (_retained_region == nullptr) {
+  } else if (_retained_region == nullptr || _retained_region->free() < r->free()) {
     // Region still has usable capacity — retain for next allocation.
+    // Prefer whichever has more free space so a small retained region doesn't starve
+    // out a larger fresh one.
     _retained_region = r;
   }
 
