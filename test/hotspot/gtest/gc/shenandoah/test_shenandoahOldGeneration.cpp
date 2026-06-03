@@ -179,4 +179,16 @@ TEST_VM_F(ShenandoahOldGenerationTest, test_try_expend_promoted_should_increase_
   EXPECT_EQ(expended_before + 128, expended_after) << "Should expend promotion";
 }
 
+TEST_VM_F(ShenandoahOldGenerationTest, test_expend_promoted_accounts_unconditionally) {
+  SKIP_IF_NOT_SHENANDOAH();
+  // try_expend_promoted gates a promotion decision and must fail past the reserve...
+  const size_t over = old->get_promoted_reserve() + 1;
+  size_t expended_before = old->get_promoted_expended();
+  EXPECT_FALSE(old->try_expend_promoted(over)) << "Reservation must fail past the reserve";
+  EXPECT_EQ(expended_before, old->get_promoted_expended()) << "Failed reservation must not change accounting";
+  // ...but expend_promoted accounts bytes already promoted unconditionally, even past the reserve.
+  EXPECT_EQ(expended_before + over, old->expend_promoted(over))
+      << "Already-promoted bytes must be accounted even past the reserve";
+}
+
 #undef SKIP_IF_NOT_SHENANDOAH

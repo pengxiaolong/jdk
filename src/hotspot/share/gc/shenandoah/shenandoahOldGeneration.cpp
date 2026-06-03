@@ -206,6 +206,10 @@ bool ShenandoahOldGeneration::try_expend_promoted(size_t increment) {
   return false;
 }
 
+size_t ShenandoahOldGeneration::expend_promoted(size_t increment) {
+  return _promoted_expended.add_then_fetch(increment);
+}
+
 size_t ShenandoahOldGeneration::unexpend_promoted(size_t decrement) {
   return _promoted_expended.sub_then_fetch(decrement);
 }
