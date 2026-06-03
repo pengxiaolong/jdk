@@ -53,6 +53,11 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   size_t min_req_words = req.is_lab_alloc() ? req.min_size() : req.size();
   // Fast path: try the retained region first.
   if (_retained_region != nullptr) {
+    constexpr ShenandoahAffiliation affiliation =
+      (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) ? OLD_GENERATION : YOUNG_GENERATION;
+    assert(!_retained_region->is_trash() && _retained_region->affiliation() == affiliation,
+           "Retained region %zu must stay affiliated to this partition until the free set is rebuilt",
+           _retained_region->index());
     HeapWord* result = nullptr;
     size_t ac_words = _retained_region->free() >> LogHeapWordSize;
     if (ac_words >= min_req_words) {
@@ -122,7 +127,9 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     if (adjusted_size > free) {
       adjusted_size = free;
     }
-    assert(adjusted_size >= req.min_size(), "Must be");
+    assert(adjusted_size >= req.min_size(),
+           "Caller must ensure region has at least min_size capacity: free=%zu, min_size=%zu",
+           free, req.min_size());
     result = r->allocate(adjusted_size, req);
     req.set_actual_size(adjusted_size);
   } else {
