@@ -45,9 +45,12 @@ private:
   // to avoid asking FreeSet to scan for a region. Cleared on free-set rebuild.
   ShenandoahHeapRegion* _retained_region;
 
-  // Attempt allocation within a single region. Handles LAB sizing, updates partition
-  // accounting via ShenandoahFreeSet, and retires the region if capacity drops below PLAB::min_size().
-  HeapWord* try_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& in_new_region);
+  // Allocate within a single region; the caller must guarantee the region has enough free
+  // capacity for the request. Handles LAB sizing, updates partition accounting via
+  // ShenandoahFreeSet, and retires the region if remaining capacity drops below PLAB::min_size().
+  // boundary_changed is set to true if the region is retired or otherwise mutates the partition
+  // boundary; it is never reset to false.
+  HeapWord* allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& boundary_changed);
 
 public:
   ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set);

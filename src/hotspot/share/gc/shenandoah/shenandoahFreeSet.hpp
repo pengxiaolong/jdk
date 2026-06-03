@@ -669,11 +669,10 @@ public:
 
   // Steal an empty region from the Mutator partition for the given collector partition.
   // Flips the region, sets up affiliation, and returns it ready for allocation.
-  // Returns nullptr if no region can be stolen. Sets in_new_region to true on success.
-  // Caller must hold the heap lock.
+  // The returned region is always empty (newly available for allocation).
+  // Returns nullptr if no region can be stolen. Caller must hold the heap lock.
   ShenandoahHeapRegion* steal_from_mutator(ShenandoahFreeSetPartitionId target_partition,
-                                           ShenandoahAllocRequest& req,
-                                           bool& in_new_region);
+                                           ShenandoahAllocRequest& req);
 
   // Allocate contiguous regions for humongous objects. Caller must hold heap lock.
   HeapWord* allocate_contiguous(ShenandoahAllocRequest& req, bool is_humongous);

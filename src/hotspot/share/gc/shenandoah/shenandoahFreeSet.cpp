@@ -420,8 +420,7 @@ template ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc<Shenando
 template ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc<ShenandoahFreeSetPartitionId::OldCollector>(size_t, bool&);
 
 ShenandoahHeapRegion* ShenandoahFreeSet::steal_from_mutator(ShenandoahFreeSetPartitionId target_partition,
-                                                            ShenandoahAllocRequest& req,
-                                                            bool& in_new_region) {
+                                                            ShenandoahAllocRequest& req) {
   shenandoah_assert_heaplocked();
   assert(target_partition != ShenandoahFreeSetPartitionId::Mutator, "Cannot steal from self");
 
@@ -442,14 +441,13 @@ ShenandoahHeapRegion* ShenandoahFreeSet::steal_from_mutator(ShenandoahFreeSetPar
       }
       log_debug(gc, free)("Flipped region %zu to gc for request: " PTR_FORMAT, idx, p2i(&req));
 
-      in_new_region = r->is_empty();
-      if (in_new_region) {
-        ShenandoahAffiliation aff = (target_partition == ShenandoahFreeSetPartitionId::OldCollector)
-                                    ? OLD_GENERATION : YOUNG_GENERATION;
-        r->set_affiliation(aff);
-        if (r->is_old()) {
-          r->end_preemptible_coalesce_and_fill();
-        }
+      r->try_recycle_under_lock();
+      assert(r->is_empty(), "Must be empty");
+      ShenandoahAffiliation aff = (target_partition == ShenandoahFreeSetPartitionId::OldCollector)
+                            ? OLD_GENERATION : YOUNG_GENERATION;
+      r->set_affiliation(aff);
+      if (r->is_old()) {
+        r->end_preemptible_coalesce_and_fill();
       }
       return r;
     }
