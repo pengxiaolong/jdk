@@ -25,17 +25,13 @@
 #include "gc/shenandoah/shenandoahAllocator.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
-#include "gc/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 
-ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set,
-                                         ShenandoahPartitionAllocatorBase* mutator_allocator,
-                                         ShenandoahPartitionAllocatorBase* collector_allocator,
-                                         ShenandoahPartitionAllocatorBase* old_collector_allocator)
+ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set)
   : _free_set(free_set),
-    _mutator_alloc(mutator_allocator),
-    _collector_alloc(collector_allocator),
-    _old_collector_alloc(old_collector_allocator) {}
+    _mutator_alloc(free_set),
+    _collector_alloc(free_set),
+    _old_collector_alloc(free_set) {}
 
 HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
   if (ShenandoahHeapRegion::requires_humongous(req.size())) {
@@ -62,16 +58,16 @@ HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_ne
 
   // Route to the appropriate per-partition allocator.
   if (req.is_mutator_alloc()) {
-    return _mutator_alloc->allocate(req, in_new_region);
+    return _mutator_alloc.allocate(req, in_new_region);
   } else if (req.is_old()) {
-    return _old_collector_alloc->allocate(req, in_new_region);
+    return _old_collector_alloc.allocate(req, in_new_region);
   } else {
-    return _collector_alloc->allocate(req, in_new_region);
+    return _collector_alloc.allocate(req, in_new_region);
   }
 }
 
-void ShenandoahAllocator::clear_retained_regions() {
-  _mutator_alloc->clear_retained_regions();
-  _collector_alloc->clear_retained_regions();
-  _old_collector_alloc->clear_retained_regions();
+void ShenandoahAllocator::release_alloc_regions() {
+  _mutator_alloc.release_alloc_region();
+  _collector_alloc.release_alloc_region();
+  _old_collector_alloc.release_alloc_region();
 }

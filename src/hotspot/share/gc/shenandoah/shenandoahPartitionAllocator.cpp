@@ -35,7 +35,7 @@
 template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set)
   : _free_set(free_set),
-    _retained_region(nullptr) {}
+    _alloc_region(nullptr) {}
 
 template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
@@ -51,25 +51,25 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
 
   bool boundary_changed = false;
   size_t min_req_words = req.is_lab_alloc() ? req.min_size() : req.size();
-  // Fast path: try the retained region first.
-  if (_retained_region != nullptr) {
+  // Fast path: try the cached alloc region first.
+  if (_alloc_region != nullptr) {
     constexpr ShenandoahAffiliation affiliation =
       (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) ? OLD_GENERATION : YOUNG_GENERATION;
-    assert(!_retained_region->is_trash() && _retained_region->affiliation() == affiliation &&
-           _free_set->membership(_retained_region->index()) == PARTITION,
-           "Retained region %zu must remain a non-trash member of this partition until the free set is rebuilt",
-           _retained_region->index());
+    assert(!_alloc_region->is_trash() && _alloc_region->affiliation() == affiliation &&
+           _free_set->membership(_alloc_region->index()) == PARTITION,
+           "Cached alloc region %zu must remain a non-trash member of this partition until the free set is rebuilt",
+           _alloc_region->index());
     HeapWord* result = nullptr;
-    size_t ac_words = _retained_region->free() >> LogHeapWordSize;
-    // A region is only ever retained while it has at least PLAB::min_size of capacity, and its
+    size_t ac_words = _alloc_region->free() >> LogHeapWordSize;
+    // A region is only ever cached while it has at least PLAB::min_size of capacity, and its
     // free space shrinks only via allocate_in (which retires and clears it below that threshold).
-    // So the retained region always has usable capacity here: use it when it can satisfy this
-    // request, otherwise keep it retained for a smaller future request and fall through.
+    // So the cached alloc region always has usable capacity here: use it when it can satisfy this
+    // request, otherwise keep it cached for a smaller future request and fall through.
     assert(ac_words >= PLAB::min_size(),
-           "Retained region %zu must keep at least PLAB::min_size capacity, has %zu words",
-           _retained_region->index(), ac_words);
+           "Cached alloc region %zu must keep at least PLAB::min_size capacity, has %zu words",
+           _alloc_region->index(), ac_words);
     if (ac_words >= min_req_words) {
-      result = allocate_in(_retained_region, req, boundary_changed);
+      result = allocate_in(_alloc_region, req, boundary_changed);
     }
     if (result != nullptr) {
       in_new_region = false;
@@ -159,14 +159,14 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
         req.set_waste(waste_bytes / HeapWordSize);
       }
     }
-    if (_retained_region == r) {
-      _retained_region = nullptr;
+    if (_alloc_region == r) {
+      _alloc_region = nullptr;
     }
-  } else if (_retained_region == nullptr || _retained_region->free() < r->free()) {
-    // Region still has usable capacity — retain for next allocation.
-    // Prefer whichever has more free space so a small retained region doesn't starve
+  } else if (_alloc_region == nullptr || _alloc_region->free() < r->free()) {
+    // Region still has usable capacity — cache it for next allocation.
+    // Prefer whichever has more free space so a small cached alloc region doesn't starve
     // out a larger fresh one.
-    _retained_region = r;
+    _alloc_region = r;
   }
 
   return result;

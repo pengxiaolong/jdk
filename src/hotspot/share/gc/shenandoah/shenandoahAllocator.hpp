@@ -25,42 +25,39 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHALLOCATOR_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHALLOCATOR_HPP
 
+#include "gc/shenandoah/shenandoahAllocRequest.hpp"
+#include "gc/shenandoah/shenandoahPartitionAllocator.hpp"
 #include "memory/allocation.hpp"
 
-class ShenandoahAllocRequest;
-class ShenandoahFreeSet;
-class ShenandoahHeapRegion;
+typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Mutator>      ShenandoahMutatorAllocator;
+typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Collector>    ShenandoahCollectorAllocator;
+typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector> ShenandoahOldCollectorAllocator;
 
-// Base class for per-partition allocation strategies.
-// Subclasses implement different mechanisms (serial under lock, CAS-based).
-class ShenandoahPartitionAllocatorBase : public CHeapObj<mtGC> {
-public:
-  virtual ~ShenandoahPartitionAllocatorBase() = default;
-  virtual HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region) = 0;
-  virtual void clear_retained_regions() = 0;
-};
-
-// ShenandoahAllocator routes allocation requests to per-partition allocators
-// and handles humongous allocations directly via ShenandoahFreeSet.
+// ShenandoahAllocator is the single entry point for memory allocations. Humongous
+// requests are served directly via ShenandoahFreeSet; all other requests are routed
+// to the appropriate per-partition allocator (mutator, collector, or old-collector).
+// Both paths run under the heap lock.
 class ShenandoahAllocator : public CHeapObj<mtGC> {
 private:
-  ShenandoahFreeSet* const            _free_set;
-  ShenandoahPartitionAllocatorBase*   _mutator_alloc;
-  ShenandoahPartitionAllocatorBase*   _collector_alloc;
-  ShenandoahPartitionAllocatorBase*   _old_collector_alloc;
+  ShenandoahFreeSet*                  _free_set;
+  ShenandoahMutatorAllocator          _mutator_alloc;
+  ShenandoahCollectorAllocator        _collector_alloc;
+  ShenandoahOldCollectorAllocator     _old_collector_alloc;
 
 public:
-  ShenandoahAllocator(ShenandoahFreeSet* free_set,
-                      ShenandoahPartitionAllocatorBase* mutator_allocator,
-                      ShenandoahPartitionAllocatorBase* collector_allocator,
-                      ShenandoahPartitionAllocatorBase* old_collector_allocator);
+  ShenandoahAllocator(ShenandoahFreeSet* free_set);
 
-  // Route allocation to the appropriate partition allocator.
-  // Humongous allocations are handled directly under heap lock.
+  // Allocate memory from heap for a request. Humongous requests are served directly via
+  // ShenandoahFreeSet; all other requests are routed to the mutator, collector, or
+  // old-collector partition allocator based on request type. The heap lock is taken
+  // on both paths (here for humongous, inside the partition allocator otherwise).
+  // Returns nullptr if the request cannot be satisfied. Sets in_new_region to indicate
+  // whether the returned address is the first allocation in a freshly acquired region.
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 
-  // Invalidate cached state in all partition allocators.
-  void clear_retained_regions();
+  // Release the cached alloc region in every partition allocator. Call before the
+  // free set is rebuilt, since rebuild may reclassify region affiliation/membership.
+  void release_alloc_regions();
 };
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHALLOCATOR_HPP

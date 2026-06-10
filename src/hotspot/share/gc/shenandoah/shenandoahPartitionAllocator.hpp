@@ -25,25 +25,25 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 
-#include "gc/shenandoah/shenandoahAllocator.hpp"
+#include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
-
-class ShenandoahAllocRequest;
-class ShenandoahHeapRegion;
+#include "gc/shenandoah/shenandoahHeapRegion.hpp"
+#include "memory/allocation.hpp"
 
 // ShenandoahPartitionAllocator is the serial (lock-based) partition allocator.
 // It uses ShenandoahFreeSet APIs to find regions and performs allocation within them
 // under the heap lock. Templated on partition ID so that partition-specific behavior
 // (overflow stealing for Collector/OldCollector) is resolved at compile time.
 template<ShenandoahFreeSetPartitionId PARTITION>
-class ShenandoahPartitionAllocator : public ShenandoahPartitionAllocatorBase {
+class ShenandoahPartitionAllocator : public CHeapObj<mtGC> {
 
 private:
   ShenandoahFreeSet* const _free_set;
 
-  // Last region that had remaining capacity after allocation. Checked first on next request
-  // to avoid asking FreeSet to scan for a region. Cleared on free-set rebuild.
-  ShenandoahHeapRegion* _retained_region;
+  // Cached allocation region with remaining capacity from the last allocation in
+  // this partition. Checked first on the next request to skip a FreeSet scan.
+  // Cleared when retired by allocate_in or by release_alloc_region.
+  ShenandoahHeapRegion* _alloc_region;
 
   // Allocate within a single region; the caller must guarantee the region has enough free
   // capacity for the request. Handles LAB sizing, updates partition accounting via
@@ -56,10 +56,11 @@ public:
   ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set);
 
   // Allocate from this partition. Returns nullptr if partition cannot satisfy the request.
-  HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region) override;
+  HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 
-  // Must be called when the free set is rebuilt to invalidate retained regions.
-  void clear_retained_regions() override { _retained_region = nullptr; }
+  // Drop the cached alloc region. Must be called before the free set is rebuilt,
+  // since rebuild can change region affiliation/membership and invalidate the cache.
+  void release_alloc_region() { _alloc_region = nullptr; }
 };
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
