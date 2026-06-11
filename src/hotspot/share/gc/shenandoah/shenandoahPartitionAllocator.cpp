@@ -144,7 +144,9 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     _free_set->increase_partition_used(PARTITION, req.actual_size() * HeapWordSize);
   } else {
     assert(req.is_gc_alloc(), "Should be gc_alloc since req wasn't mutator alloc");
-    // GC allocations set update_watermark so relocated objects aren't re-updated during update-refs.
+    // For GC allocations, we advance update_watermark because the objects relocated into this memory during
+    // evacuation are not updated during evacuation. For both young and old regions, it is essential that all
+    // PLABs be made parsable at the end of evacuation. This is enabled by retiring all plabs at end of evacuation.
     r->set_update_watermark(r->top());
     _free_set->increase_partition_used(PARTITION, (req.actual_size() + req.waste()) * HeapWordSize);
   }
