@@ -59,13 +59,8 @@ template<typename Clock>
 void ShenandoahAllocRate<Clock>::allocated(const size_t allocated_bytes) {
   size_t unsampled = _allocated_bytes_since_last_sample.add_then_fetch(allocated_bytes, memory_order_relaxed);
   const size_t minimum_sample_size = _minimum_sample_size.load_relaxed();
-  if (unsampled < minimum_sample_size) {
-    // Not enough to sample yet
-    return;
-  }
-
-  if (!_sample_lock.try_lock()) {
-    // Another thread has the lock and will take the sample
+  if (unsampled < minimum_sample_size || !_sample_lock.try_lock()) {
+    // Not enough to sample yet or not able to acquire the sample lock
     return;
   }
 
@@ -136,7 +131,7 @@ void ShenandoahAllocRate<Clock>::take_sample(jlong now, jlong elapsed, size_t un
 template<typename Clock>
 ShenandoahAnticipatedConsumption ShenandoahAllocRate<Clock>::snapshot(const double time_delta, const double standard_deviations) {
   ShenandoahAnticipatedConsumption result(time_delta);
-  MonitorLocker locker(&_sample_lock, Mutex::_no_safepoint_check_flag);
+  ShenandoahAllocRateSampleLocker locker(&_sample_lock);
 
   result._baseline = upper_bound_no_lock(standard_deviations);
 

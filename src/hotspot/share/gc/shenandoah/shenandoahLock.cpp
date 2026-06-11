@@ -97,6 +97,10 @@ void ShenandoahSimpleLock::lock(bool allow_block_for_safepoint) {
   _lock.lock();
 }
 
+bool ShenandoahSimpleLock::try_lock() {
+  return _lock.try_lock();
+}
+
 void ShenandoahSimpleLock::unlock() {
   _lock.unlock();
 }
@@ -122,6 +126,20 @@ void ShenandoahReentrantLock<Lock>::lock(bool allow_block_for_safepoint) {
   }
 
   _count++;
+}
+
+template<typename Lock>
+bool ShenandoahReentrantLock<Lock>::try_lock() {
+  if (owned_by_self()) {
+    _count++;
+    return true;
+  }
+  if (Lock::try_lock()) {
+    _count++;
+    _owner.store_relaxed(Thread::current());
+    return true;
+  }
+  return false;
 }
 
 template<typename Lock>

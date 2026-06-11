@@ -68,6 +68,15 @@ public:
     DEBUG_ONLY(_owner.store_relaxed(Thread::current());)
   }
 
+  bool try_lock() {
+    assert(_owner.load_relaxed() != Thread::current(), "reentrant locking attempt, would deadlock");
+    if (_state.compare_exchange(unlocked, locked) == unlocked) {
+      DEBUG_ONLY(_owner.store_relaxed(Thread::current());)
+      return true;
+    }
+    return false;
+  }
+
   void unlock() {
     assert(_owner.load_relaxed() == Thread::current(), "sanity");
     DEBUG_ONLY(_owner.store_relaxed((Thread*)nullptr);)
@@ -94,6 +103,9 @@ private:
 public:
   ShenandoahSimpleLock();
   void lock(bool allow_block_for_safepoint = false);
+
+  bool try_lock();
+
   void unlock();
 };
 
@@ -109,6 +121,7 @@ public:
   ~ShenandoahReentrantLock();
 
   void lock(bool allow_block_for_safepoint = false);
+  bool try_lock();
   void unlock();
 
   // If the lock already owned by this thread
