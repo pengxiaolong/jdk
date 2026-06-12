@@ -45,14 +45,9 @@ HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_ne
       case ShenandoahAllocRequest::_alloc_cds:
         in_new_region = true;
         return _free_set->allocate_contiguous(req, /* is_humongous = */ false);
-      case ShenandoahAllocRequest::_alloc_plab:
-      case ShenandoahAllocRequest::_alloc_gclab:
-      case ShenandoahAllocRequest::_alloc_tlab:
-        in_new_region = false;
-        assert(false, "Trying to allocate TLAB in humongous region: %zu", req.size());
-        return nullptr;
       default:
         ShouldNotReachHere();
+        in_new_region = false;
         return nullptr;
     }
   }
