@@ -185,6 +185,12 @@
                 atomic_cmpxchg_8_release_impl,                          \
                 atomic_cmpxchg_8_release_impl)                          \
   do_arch_entry(aarch64, final, atomic_entry_points,                    \
+                atomic_cmpxchg_4_acquire_impl,                          \
+                atomic_cmpxchg_4_acquire_impl)                          \
+  do_arch_entry(aarch64, final, atomic_entry_points,                    \
+                atomic_cmpxchg_8_acquire_impl,                          \
+                atomic_cmpxchg_8_acquire_impl)                          \
+  do_arch_entry(aarch64, final, atomic_entry_points,                    \
                 atomic_cmpxchg_4_seq_cst_impl,                          \
                 atomic_cmpxchg_4_seq_cst_impl)                          \
   do_arch_entry(aarch64, final, atomic_entry_points,                    \

@@ -209,6 +209,40 @@ DECLARE_FUNC(aarch64_atomic_cmpxchg_8_release_default_impl):
         ret
 
         .align 5
+DECLARE_FUNC(aarch64_atomic_cmpxchg_4_acquire_default_impl):
+        hint    #0x22 // bti c
+#ifdef __ARM_FEATURE_ATOMICS
+        mov     x3, x1
+        casa    w3, w2, [x0]
+#else
+        prfm    pstl1strm, [x0]
+0:      ldaxr   w3, [x0]
+        cmp     w3, w1
+        b.ne    1f
+        stxr    w8, w2, [x0]
+        cbnz    w8, 0b
+#endif
+1:      mov     w0, w3
+        ret
+
+        .align 5
+DECLARE_FUNC(aarch64_atomic_cmpxchg_8_acquire_default_impl):
+        hint    #0x22 // bti c
+#ifdef __ARM_FEATURE_ATOMICS
+        mov     x3, x1
+        casa    x3, x2, [x0]
+#else
+        prfm    pstl1strm, [x0]
+0:      ldaxr   x3, [x0]
+        cmp     x3, x1
+        b.ne    1f
+        stxr    w8, x2, [x0]
+        cbnz    w8, 0b
+#endif
+1:      mov     x0, x3
+        ret
+
+        .align 5
 DECLARE_FUNC(aarch64_atomic_cmpxchg_4_seq_cst_default_impl):
         hint    #0x22 // bti c
 #ifdef __ARM_FEATURE_ATOMICS
