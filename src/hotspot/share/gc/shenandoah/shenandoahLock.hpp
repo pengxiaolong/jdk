@@ -86,7 +86,7 @@ public:
 
   void contended_lock(bool allow_block_for_safepoint);
 
-  bool owned_by_self() {
+  bool owned_by_self() const {
 #ifdef ASSERT
     return _state.load_relaxed() == locked && _owner.load_relaxed() == Thread::current();
 #else
