@@ -70,7 +70,7 @@ public:
 
   bool try_lock() {
     assert(_owner.load_relaxed() != Thread::current(), "reentrant locking attempt, would deadlock");
-    if (_state.compare_exchange(unlocked, locked) == unlocked) {
+    if (_state.compare_exchange(unlocked, locked, memory_order_acquire) == unlocked) {
       DEBUG_ONLY(_owner.store_relaxed(Thread::current());)
       return true;
     }
