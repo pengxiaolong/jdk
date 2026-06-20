@@ -91,13 +91,71 @@ void ShenandoahLock::yield_or_sleep(int &yields) {
 
 ShenandoahSimpleLock::ShenandoahSimpleLock() {
   assert(os::mutex_init_done(), "Too early!");
+  DEBUG_ONLY(_owner.store_relaxed(nullptr);)
+}
+
+// In-flight release callback, modeled on the file-private InFlightMutexRelease in mutex.cpp.
+// ThreadBlockInVMPreprocess invokes operator() after the acquiring JavaThread has transitioned back
+// to _thread_in_vm but before it processes a pending safepoint, giving us the chance to release the
+// just-acquired native lock so the thread does not stall the safepoint while holding it.
+// not_released() reports whether we kept the lock.
+class ShenandoahInFlightLockRelease {
+private:
+  ShenandoahSimpleLock* _lock;
+public:
+  ShenandoahInFlightLockRelease(ShenandoahSimpleLock* lock) : _lock(lock) {
+    assert(lock != nullptr, "must be");
+  }
+  void operator()(JavaThread* current) {
+    _lock->release_for_safepoint();
+    _lock = nullptr;
+  }
+  bool not_released() { return _lock != nullptr; }
+};
+
+void ShenandoahSimpleLock::contended_lock_for_java_thread(JavaThread* java_thread) {
+  // Mirror Mutex::lock_contended for an active Java thread: block on the native monitor inside a
+  // ThreadBlockInVMPreprocess so a pending safepoint can run while we wait. If a safepoint becomes
+  // pending as we return, the in-flight-release callback unlocks on its behalf and we retry.
+  do {
+    ShenandoahInFlightLockRelease release(this);
+    {
+      ThreadBlockInVMPreprocess<ShenandoahInFlightLockRelease> tbivm(java_thread, release);
+      _lock.lock();
+    }
+    if (release.not_released()) {
+      // The callback did not fire: no safepoint took the lock away, so we hold it.
+      return;
+    }
+    // A safepoint was processed and the lock was released on its behalf; retry.
+  } while (!_lock.try_lock());
 }
 
 void ShenandoahSimpleLock::lock(bool allow_block_for_safepoint) {
-  _lock.lock();
+  Thread* const thread = Thread::current();
+  assert(_owner.load_relaxed() != thread, "reentrant locking attempt, would deadlock");
+
+  if (allow_block_for_safepoint && thread->is_Java_thread()) {
+    // Acquire safepoint-aware: block in _thread_blocked, releasing for any safepoint that arrives
+    // while we wait, and retry until we hold the lock with no safepoint pending.
+    contended_lock_for_java_thread(JavaThread::cast(thread));
+  } else {
+    // VM/GC threads, and all callers that never request safepoint blocking (e.g. NMethod lock),
+    // acquire the native monitor directly -- behavior identical to the original ShenandoahSimpleLock.
+    _lock.lock();
+  }
+
+  assert(_owner.load_relaxed() == nullptr, "must not be owned");
+  DEBUG_ONLY(_owner.store_relaxed(thread);)
 }
 
 void ShenandoahSimpleLock::unlock() {
+  assert(_owner.load_relaxed() == Thread::current(), "sanity");
+  DEBUG_ONLY(_owner.store_relaxed((Thread*)nullptr);)
+  _lock.unlock();
+}
+
+void ShenandoahSimpleLock::release_for_safepoint() {
   _lock.unlock();
 }
 

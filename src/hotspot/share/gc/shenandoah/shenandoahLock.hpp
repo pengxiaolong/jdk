@@ -87,14 +87,43 @@ public:
   }
 };
 
-// Simple lock using PlatformMonitor
+// Blocking lock backed by a PlatformMonitor: a contended waiter parks on the native monitor instead
+// of busy-spinning like ShenandoahLock. When used as the heap lock, a JavaThread that passes
+// allow_block_for_safepoint acquires in a safepoint-aware way -- it blocks in _thread_blocked (so a
+// pending safepoint is not stalled) and, if a safepoint becomes pending while it is acquiring,
+// releases the lock on the safepoint's behalf and retries afterward. This mirrors HotSpot's
+// Mutex::lock_contended (ThreadBlockInVMPreprocess + in-flight release), but is a Shenandoah-private
+// lock so it is exempt from the Mutex rank model: the heap lock is taken by JavaThreads both with
+// and without a safepoint check, which no single Mutex rank permits.
+//
+// Callers that never pass allow_block_for_safepoint (e.g. ShenandoahNMethodLock) keep the plain
+// blocking behavior unchanged -- they always take the direct _lock.lock() path below.
 class ShenandoahSimpleLock {
+  // Grants access to release_for_safepoint() for the in-flight release callback (defined in the .cpp).
+  friend class ShenandoahInFlightLockRelease;
 private:
   PlatformMonitor   _lock; // native lock
+  DEBUG_ONLY(Atomic<Thread*> _owner;)
+
+  void contended_lock_for_java_thread(JavaThread* java_thread);
+
+  // Release the native lock on behalf of an arriving safepoint (in-flight release). Called from the
+  // ThreadBlockInVMPreprocess callback while the acquiring JavaThread is being safepointed.
+  void release_for_safepoint();
+
 public:
   ShenandoahSimpleLock();
   void lock(bool allow_block_for_safepoint = false);
   void unlock();
+
+  bool owned_by_self() {
+#ifdef ASSERT
+    return _owner.load_relaxed() == Thread::current();
+#else
+    ShouldNotReachHere();
+    return false;
+#endif
+  }
 };
 
 // templated reentrant lock
