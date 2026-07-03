@@ -398,6 +398,14 @@
           "reserve/waste is incorrect, at the risk that application "       \
           "runs out of memory too early.")                                  \
                                                                             \
+  product(bool, ShenandoahMutatorEvacDirect, false, EXPERIMENTAL,           \
+          "When a mutator thread evacuates an object from a barrier, "      \
+          "allocate the copy directly from the shared collector partition " \
+          "instead of a thread-local GCLAB/PLAB. On heavily oversubscribed "\
+          "systems with very many mutator threads this avoids each thread " \
+          "pinning an evacuation LAB, at the cost of more shared-allocation "\
+          "traffic. GC worker threads always use their LABs.")              \
+                                                                            \
   product(uint, ShenandoahMutatorAllocRegions, 0, EXPERIMENTAL,             \
           "Number of CAS alloc regions striped across the mutator "         \
           "allocator. Threads probe a per-thread slot for lock-free "       \

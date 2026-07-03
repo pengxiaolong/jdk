@@ -1311,11 +1311,15 @@ oop ShenandoahHeap::try_evacuate_object(oop p, Thread* thread, ShenandoahHeapReg
     copy = nullptr;
   } else {
 #endif
-    if (UseTLAB) {
+    // On heavily oversubscribed systems, ShenandoahMutatorEvacDirect lets mutator threads skip the
+    // thread-local GCLAB and evacuate directly from the shared collector partition, so we do not pin
+    // an evacuation LAB per (potentially very many) mutator thread. GC workers always use their LAB.
+    const bool use_lab = UseTLAB && !(ShenandoahMutatorEvacDirect && thread->is_Java_thread());
+    if (use_lab) {
       copy = allocate_from_gclab(thread, size);
     }
     if (copy == nullptr) {
-      // If we failed to allocate in LAB, we'll try a shared allocation.
+      // If we failed to allocate in LAB (or skipped it), we'll try a shared allocation.
       ShenandoahAllocRequest req = ShenandoahAllocRequest::for_shared_gc(size, target_gen);
       copy = allocate_memory(req);
       alloc_from_lab = false;

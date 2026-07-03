@@ -245,7 +245,12 @@ oop ShenandoahGenerationalHeap::try_evacuate_object(oop p, Thread* thread, uint 
     copy = nullptr;
   } else {
 #endif
-    if (UseTLAB) {
+    // On heavily oversubscribed systems, ShenandoahMutatorEvacDirect lets mutator threads skip the
+    // thread-local GCLAB/PLAB and evacuate directly from the shared collector partition, so we do
+    // not pin an evacuation LAB per (potentially very many) mutator thread. GC workers always use
+    // their LAB.
+    const bool use_lab = UseTLAB && !(ShenandoahMutatorEvacDirect && thread->is_Java_thread());
+    if (use_lab) {
       switch (TO_GENERATION) {
         case YOUNG_GENERATION: {
           copy = allocate_from_gclab(thread, size);
