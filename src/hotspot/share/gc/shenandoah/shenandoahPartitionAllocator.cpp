@@ -179,6 +179,17 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(uint inde
   return true;
 }
 
+class ShenandoahHeapUnlocker : public StackObj {
+  ShenandoahHeapLock* _lock;
+public:
+  ShenandoahHeapUnlocker(ShenandoahHeapLock* const lock) : _lock(lock) {
+    assert(lock->owned_by_self(), "Must be");
+  }
+  ~ShenandoahHeapUnlocker() {
+    _lock->unlock();
+  }
+};
+
 template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
   // Resolve the current thread once and pass it to alloc_region_slot() instead of having that
@@ -207,12 +218,24 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     }
     shared_region = current;
   }
-
-  // Slow-path with heap lock
+  ShenandoahHeap* const heap = ShenandoahHeap::heap();
+  // Slow-path
   {
-    // Mutator allocations may yield to safepoint; GC allocations cannot
-    ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock(), req.is_mutator_alloc());
-
+    ShenandoahHeapLock* const heap_lock = heap->lock();
+    bool locked = _alloc_region_count > 1 && heap_lock->try_lock();
+    if (_alloc_region_count > 1 && !locked) {
+      // Lock is contended: before blocking, try a lock-free allocation in sibling stripe slots
+      HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) % _alloc_region_count, slot);
+      if (obj != nullptr) {
+        return obj;
+      }
+    }
+    if (!locked) {
+      // Mutator allocations may yield to safepoint; GC allocations cannot
+      heap_lock->lock(/*allow_block_for_safepoint*/req.is_mutator_alloc());
+    }
+    //Now we own the lock, need to unlock at the exit of the block
+    ShenandoahHeapUnlocker unlocker(heap_lock);
     // Retry the lock-free probe ONLY if the slot changed while we waited for the lock: another thread
     // may have installed a fresh region (or replaced ours). If the slot still holds the same region
     // we already failed on above, retrying is pointless: a region's free capacity only shrinks, so
@@ -235,7 +258,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
 
     // OldCollector: verify old generation has room before attempting allocation
     if constexpr (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) {
-      if (!req.is_promotion() && !ShenandoahHeap::heap()->old_generation()->can_allocate(req)) {
+      if (!req.is_promotion() && !heap->old_generation()->can_allocate(req)) {
         return nullptr;
       }
     }
