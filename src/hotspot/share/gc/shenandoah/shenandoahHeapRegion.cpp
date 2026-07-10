@@ -25,7 +25,6 @@
  */
 
 #include "gc/shared/cardTable.hpp"
-#include "gc/shared/plab.hpp"
 #include "gc/shared/space.hpp"
 #include "gc/shared/tlab_globals.hpp"
 #include "gc/shenandoah/shenandoahCardTable.hpp"
@@ -56,13 +55,6 @@ size_t ShenandoahHeapRegion::RegionSizeBytesMask = 0;
 size_t ShenandoahHeapRegion::RegionSizeWordsMask = 0;
 size_t ShenandoahHeapRegion::MaxTLABSizeBytes = 0;
 size_t ShenandoahHeapRegion::MaxTLABSizeWords = 0;
-size_t ShenandoahHeapRegion::PLABMinSizeWords = 0;
-
-void ShenandoahHeapRegion::initialize_plab_min_size() {
-  assert(PLABMinSizeWords == 0, "Should only set it once");
-  PLABMinSizeWords = PLAB::min_size();
-  assert(PLABMinSizeWords != 0, "PLAB::min_size() must be non-zero");
-}
 
 ShenandoahHeapRegion::ShenandoahHeapRegion(HeapWord* start, size_t index, bool committed) :
   _index(index),

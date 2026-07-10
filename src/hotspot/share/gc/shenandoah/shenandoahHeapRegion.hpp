@@ -238,10 +238,6 @@ private:
   static size_t RegionSizeWordsMask;
   static size_t MaxTLABSizeBytes;
   static size_t MaxTLABSizeWords;
-  // Cached PLAB::min_size() in words. PLAB::min_size() is out-of-line and recomputes from values
-  // fixed after JVM init (MinTLABSize, oopDesc::header_size(), CollectedHeap::lab_alignment_reserve),
-  // yet it is called on the allocation hot path. Compute it once and read this static instead.
-  static size_t PLABMinSizeWords;
 
   // Never updated fields
   size_t const _index;
@@ -354,17 +350,6 @@ public:
   inline static size_t region_size_words() {
     return ShenandoahHeapRegion::RegionSizeWords;
   }
-
-  // Cached PLAB::min_size() in words (see PLABMinSizeWords). Must be called only after
-  // ShenandoahHeap::initialize() has set it.
-  inline static size_t plab_min_size_words() {
-    assert(ShenandoahHeapRegion::PLABMinSizeWords != 0, "PLABMinSizeWords not initialized yet");
-    return ShenandoahHeapRegion::PLABMinSizeWords;
-  }
-
-  // One-time initialization of PLABMinSizeWords. Called from ShenandoahHeap::initialize() after
-  // CollectedHeap has finalized lab_alignment_reserve. Idempotent-safe: asserts it is set once.
-  static void initialize_plab_min_size();
 
   inline static size_t region_size_bytes_shift() {
     return ShenandoahHeapRegion::RegionSizeBytesShift;
