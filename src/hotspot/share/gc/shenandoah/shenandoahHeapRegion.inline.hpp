@@ -91,7 +91,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
     if (free_words >= size) {
       if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
         adjust_alloc_metadata(req, size);
-        ready_for_replenish = (free_words - size) < PLAB::min_size();
+        ready_for_replenish = (free_words - size) < plab_min_size_words();
         return obj;
       }
       if (obj == nullptr) {
@@ -103,7 +103,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
       // minimum LAB (truly full); otherwise leave it, since a smaller future request may still fit, and
       // retiring it here would discard usable capacity to one oversized request. Note free_words < size
       // here, so do not compute free_words - size (unsigned underflow).
-      ready_for_replenish = free_words < PLAB::min_size();
+      ready_for_replenish = free_words < plab_min_size_words();
       return nullptr;
     }
     SpinPause(); // Spin pause on contention.
@@ -134,7 +134,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
       if (try_allocate(obj /*value*/, adjusted_size, obj /*reference*/)) {
         actual_size = adjusted_size;
         adjust_alloc_metadata(req, adjusted_size);
-        ready_for_replenish = free_words - adjusted_size < PLAB::min_size();
+        ready_for_replenish = free_words - adjusted_size < plab_min_size_words();
         return obj;
       }
 
@@ -147,7 +147,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
                           " because min_size() is %zu", req_size, index(), adjusted_size, min_size);
       // Region cannot satisfy even the minimum LAB. Mark for replenish only when it has no room for
       // any minimum LAB (truly full); free_words is the region's actual remaining capacity here.
-      ready_for_replenish = free_words < PLAB::min_size();
+      ready_for_replenish = free_words < plab_min_size_words();
       return nullptr;
     }
     SpinPause(); // Spin pause on contention.

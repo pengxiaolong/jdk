@@ -174,6 +174,10 @@ static ReservedSpace reserve(size_t size, size_t preferred_page_size) {
 }
 
 jint ShenandoahHeap::initialize() {
+  // Cache PLAB::min_size() now that CollectedHeap has finalized lab_alignment_reserve; the allocation
+  // hot path reads the cached value instead of recomputing it via the out-of-line PLAB::min_size().
+  ShenandoahHeapRegion::initialize_plab_min_size();
+
   //
   // Figure out heap sizing
   //
