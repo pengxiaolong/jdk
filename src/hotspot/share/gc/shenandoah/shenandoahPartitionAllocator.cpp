@@ -379,16 +379,8 @@ void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint slot) {
   if (alloc_region == nullptr) {
     return;
   }
-  _alloc_regions[slot].release_store(nullptr);
 
-  bool unset = alloc_region->unset_active_alloc_region();
-  assert(unset, "Should always succeed");
-  if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-    // Cover the objects evacuated into this region so update-refs processes them, then
-    // clear the reserved flag so the barrier stops forcing bulk updates over the region.
-    alloc_region->set_update_watermark(alloc_region->stable_top());
-    alloc_region->set_gc_alloc_region(false);
-  }
+  uninstall_alloc_region(slot, alloc_region);
   if (alloc_region->free() >> LogHeapWordSize >= ShenandoahHeap::plab_min_size()) {
     // Region is still allocatable: return its unconsumed remnant to the partition and
     // make it a free-set member again.

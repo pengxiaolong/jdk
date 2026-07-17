@@ -80,19 +80,10 @@ private:
   // a last resort. Returns the allocation, or nullptr if no slot in the range could satisfy it.
   HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint start_slot, uint count);
 
-
+  // Uninstall the occupant from the stripe slot.
   void uninstall_alloc_region(uint slot, ShenandoahHeapRegion* occupant);
-  // Try to install freshly-allocated new_region into stripe slot index as the active alloc region
-  // (heap lock held). occupant is the value the caller already loaded from the slot under the lock;
-  // since installs happen only under the lock, the slot can only have changed from occupant to
-  // nullptr (the lock-free fast path retiring it), so occupant is a valid CAS expected value.
-  //
-  // Installs only when new_region is the better region to cache: the slot is empty, or new_region
-  // has strictly more remaining capacity than the occupant. When it installs, any displaced
-  // occupant is deactivated and its remnant returned to the free set. When the occupant has at least
-  // as much room as new_region, the install is declined and new_region is left as an ordinary
-  // free-set member (the caller's allocation from it is already accounted).
-  //
+
+  // Try to install freshly-allocated new_region into stripe slot as the active alloc region(heap lock held).
   // Returns true if new_region became the slot's active alloc region.
   bool try_install_alloc_region(uint slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
 
@@ -124,20 +115,10 @@ public:
   // use the lock-free allocation path instead of contending for the heap lock.
   void reserve_alloc_regions();
 
-  // Read-time accounting correction for the cached alloc regions.
-  //
-  // When a region is reserved as an alloc region, retire_region() pre-charges its entire remaining
-  // capacity to the partition's used bytes (and drops it from the free-region count). Subsequent CAS
-  // allocations consume that capacity without touching any partition counter, so while a region is
-  // active the partition's used is over-counted, and available under-counted, by exactly that
-  // region's current free(). This returns the sum of that correction term across all stripe slots
-  // so accounting readers can compensate.
-  //
+  // Total remaining bytes of all the alloc regions held by the allocator.
   // This is a best-effort estimate consumed by saturating-subtraction accounting readers, so it uses
   // fully relaxed reads on the hottest scan path: load_relaxed for the slot pointer and free_relaxed()
-  // (relaxed _atomic_top) for its free bytes. The value is only used arithmetically -- never to
-  // dereference memory -- so no acquire ordering is needed; this avoids pulling each cached region's
-  // hot _atomic_top cache line in with acquire semantics on every accounting read.
+  // (relaxed _atomic_top) for its free bytes.
   size_t remnant_bytes() const {
     const size_t min_free_bytes = ShenandoahHeap::plab_min_size() * HeapWordSize;
     size_t total = 0;
