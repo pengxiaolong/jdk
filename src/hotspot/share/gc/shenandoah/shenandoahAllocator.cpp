@@ -46,15 +46,22 @@
 // flag's help text). An explicit value is still capped at MAX_ALLOC_REGIONS.
 static uint mutator_alloc_regions() {
   if (ShenandoahMutatorAllocRegions != 0) {
+    assert(is_power_of_2(ShenandoahMutatorAllocRegions), "Must be a power of 2");
     return MIN2((uint) ShenandoahMutatorAllocRegions, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint cpu_bound = (uint) MAX2(os::initial_active_processor_count(), 1);
   const uint heap_bound = (uint) MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1);
-  return MIN3(cpu_bound, heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS);
+  return round_down_power_of_2(MIN3(cpu_bound, heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS));
 }
 
 static uint collector_alloc_regions() {
-  return  ShenandoahCollectorAllocRegions == 0 ? ParallelGCThreads : ShenandoahCollectorAllocRegions;
+  if (ShenandoahCollectorAllocRegions != 0) {
+    assert(is_power_of_2(ShenandoahCollectorAllocRegions), "Must be a power of 2");
+    return MIN2((uint) ShenandoahCollectorAllocRegions, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS);
+  }
+  const uint worker_bound = ParallelGCThreads;
+  const uint heap_bound = (uint) MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1);
+  return round_down_power_of_2(MIN3(worker_bound, heap_bound, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS));
 }
 
 ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set)

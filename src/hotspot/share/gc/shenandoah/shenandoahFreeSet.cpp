@@ -2628,6 +2628,10 @@ void ShenandoahFreeSet::prepare_to_rebuild(size_t &young_trashed_regions, size_t
   shenandoah_assert_heaplocked();
   assert(rebuild_lock() != nullptr, "sanity");
   rebuild_lock()->lock(false);
+  // Drop the collector/old-collector cached alloc regions before clearing partition state.
+  // Mutator alloc regions are intentionally kept active across the rebuild: find_regions_with_
+  // alloc_capacity() re-accounts them in place (reproducing the reserve-time pre-charge) rather
+  // than releasing them, so application threads keep their lock-free fast path. 
   _heap->allocator()->release_collector_alloc_regions();
   // This resets all state information, removing all regions from all sets.
   clear();

@@ -50,11 +50,9 @@ public:
 private:
   ShenandoahFreeSet* const _free_set;
 
-  // Number of alloc-region stripe slots in use for this partition (>= 1). For the mutator this is
-  // fixed at construction. For the collector/old-collector partitions it is (re)sized per evacuation
-  // to match the evac worker count -- see set_alloc_region_count / grow_alloc_region_count, which are
-  // only called at a safepoint while these slots are released (or, for grow, monotonically increased).
+  // Number of alloc-region stripe slots in use for this partition, a power of two.
   uint const _alloc_region_count;
+  uint const _alloc_region_slot_mask;
 
   // Stripe array of cached alloc regions. Each slot holds a region with remaining capacity that is
   // bump-allocated lock-free via CAS, or nullptr when the slot is empty. A slot is cleared when its

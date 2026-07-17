@@ -37,7 +37,9 @@
 template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint alloc_region_count)
   : _free_set(free_set),
-    _alloc_region_count(MIN2(MAX2(alloc_region_count, 1u), MAX_ALLOC_REGIONS)) {
+    _alloc_region_count(alloc_region_count),
+   _alloc_region_slot_mask(alloc_region_count - 1u) {
+  assert(is_power_of_2(alloc_region_count), "Must be power of 2");
   for (uint i = 0; i < MAX_ALLOC_REGIONS; i++) {
     _alloc_regions[i].store_relaxed(nullptr);
   }
@@ -54,14 +56,14 @@ uint ShenandoahPartitionAllocator<PARTITION>::alloc_region_slot(Thread* thread) 
     // has never been assigned a worker task.
     const uint worker_id = WorkerThread::worker_id();
     if (worker_id != UINT_MAX) {
-      return worker_id % _alloc_region_count;
+      return worker_id & _alloc_region_slot_mask;
     }
   }
 
   // Mutators and rare non-worker collector allocations share one stable raw per-thread ticket.
   // Reduce it here rather than caching a consumer-specific slot so other striped structures can
   // independently map the same ticket into differently-sized arrays.
-  const uint slot = ShenandoahThreadLocalData::round_robin_probe(thread) % _alloc_region_count;
+  const uint slot = ShenandoahThreadLocalData::round_robin_probe(thread) & _alloc_region_slot_mask;
   assert(slot < _alloc_region_count, "slot in range");
   return slot;
 }
@@ -208,7 +210,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       if (fresh == nullptr) {
         if (_alloc_region_count > 1) {
-          HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) % _alloc_region_count, slot);
+          HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) & _alloc_region_slot_mask, slot);
           if (obj != nullptr) {
             return obj;
           }
@@ -252,7 +254,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
       // free set has no region to hand out. Scan all slots under the lock before giving up; this is
       // what keeps a full own-slot from causing a spurious allocation failure.
       if (_alloc_region_count > 1) {
-        HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) % _alloc_region_count, slot);
+        HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) & _alloc_region_slot_mask, slot);
         if (obj != nullptr) {
           return obj;
         }
