@@ -124,19 +124,6 @@ public:
   // use the lock-free allocation path instead of contending for the heap lock.
   void reserve_alloc_regions();
 
-  // Set the number of active stripe slots (clamped to [1, MAX_ALLOC_REGIONS]). Must be called at a
-  // safepoint while all slots are released (empty), because it may lower the count: a non-empty slot
-  // at an index >= the new count would be stranded (never scanned, never retired). Used to size the
-  // collector partitions to the evac worker count before evacuation begins.
-  void set_alloc_region_count(uint count);
-
-  // Raise the number of active stripe slots to at least `count` (clamped to MAX_ALLOC_REGIONS);
-  // never lowers it. Must be called at a safepoint. Unlike set_alloc_region_count this does not
-  // require the slots to be empty: existing occupied slots keep serving, and only higher-indexed
-  // slots become newly reachable. Used when a degenerated cycle escalates to more workers than the
-  // in-flight concurrent evacuation was sized for.
-  void grow_alloc_region_count(uint count);
-
   // Read-time accounting correction for the cached alloc regions.
   //
   // When a region is reserved as an alloc region, retire_region() pre-charges its entire remaining
