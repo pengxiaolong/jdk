@@ -788,22 +788,6 @@ public:
   // Acquire heap lock and log status, assuming heap lock is not acquired by the caller.
   void log_status_under_lock();
 
-  // Acquire heap lock and release the cached CAS alloc region of every partition allocator.
-  // Called at GC phase boundaries (before choosing the collection set, before update-refs,
-  // and in degenerated/full/old GC) so that active alloc regions are deactivated, their
-  // accounting is reconciled, and their _atomic_top is synced back to _top before the heap
-  // is iterated or regions are recycled.
-  void release_alloc_regions_under_lock();
-
-  // Like release_alloc_regions_under_lock(), but only releases the Collector and OldCollector
-  // CAS alloc regions, leaving the Mutator alloc regions active. Used at the cset-selection
-  // boundaries (final mark, degen prepare-evac, old final mark): the collector regions hold
-  // evacuation copies and feed cset reserve computation so they must be quiesced, but mutator
-  // regions stay hot so application threads keep their lock-free allocation fast path across the
-  // GC cycle. The kept mutator regions are skipped by cset selection and re-accounted (not
-  // released) by the subsequent free-set rebuild.
-  void release_collector_alloc_regions_under_lock();
-
   // All four of the following functions may produce stale data if called without owning the global heap lock.
   // Changes to the values of these variables are performed with a lock.  A change to capacity or used "atomically"
   // adjusts available with respect to lock holders.  However, sequential calls to these three functions may produce

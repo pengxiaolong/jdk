@@ -609,6 +609,7 @@ void ShenandoahConcurrentGC::entry_evacuate() {
   heap->try_inject_alloc_failure();
   heap->try_inject_pin();
   op_evacuate();
+  heap->allocator()->release_collector_alloc_regions_under_lock();
 }
 
 void ShenandoahConcurrentGC::entry_update_thread_roots() {
@@ -800,12 +801,8 @@ void ShenandoahConcurrentGC::op_final_mark() {
     // Notify JVMTI that the tagmap table will need cleaning.
     JvmtiTagMap::set_needs_cleaning();
 
-    // Release all cached CAS alloc regions (mutator and collector) before choosing the collection
-    // set, so that no region remains an active alloc region (its _atomic_top synced back to _top,
-    // accounting reconciled) while cset selection and recycling iterate the heap. We are at a
-    // safepoint here, so releasing mutator regions is safe: no mutator can be concurrently
-    // allocating into them.
-    heap->free_set()->release_alloc_regions_under_lock();
+    // Release all cached CAS alloc regions before choosing the collection set.
+    heap->allocator()->release_mutator_alloc_regions();
 
     // The collection set is chosen by prepare_regions_and_collection_set(). Additionally, certain parameters have been
     // established to govern the evacuation efforts that are about to begin.  Refer to comments on reserve members in
@@ -846,14 +843,9 @@ void ShenandoahConcurrentGC::op_final_mark() {
         }
       }
     }
-
-    {
-      ShenandoahHeapLocker locker(heap->lock());
-      if (!heap->collection_set()->is_empty()) {
-        heap->allocator()->set_collector_alloc_region_count(ShenandoahWorkerPolicy::calc_workers_for_conc_evac());
-        heap->allocator()->reserve_collector_alloc_regions();
-      }
-      heap->allocator()->reserve_mutator_alloc_regions();
+    heap->allocator()->reserve_mutator_alloc_regions();
+    if (!heap->collection_set()->is_empty()) {
+      heap->allocator()->reserve_collector_alloc_regions();
     }
   }
 

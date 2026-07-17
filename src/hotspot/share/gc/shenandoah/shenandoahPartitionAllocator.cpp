@@ -374,38 +374,6 @@ void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-void ShenandoahPartitionAllocator<PARTITION>::set_alloc_region_count(uint count) {
-  shenandoah_assert_heaplocked_or_safepoint();
-  count = MIN2(MAX2(count, 1u), MAX_ALLOC_REGIONS);
-#ifdef ASSERT
-  // Lowering the count would strand any occupied slot at index >= count (never scanned, never
-  // retired), so all slots must be released before we resize. Callers guarantee this.
-  for (uint i = 0; i < MAX_ALLOC_REGIONS; i++) {
-    assert(_alloc_regions[i].load_relaxed() == nullptr, "All slots must be released before resizing");
-  }
-#endif
-  _alloc_region_count = count;
-}
-
-template<ShenandoahFreeSetPartitionId PARTITION>
-void ShenandoahPartitionAllocator<PARTITION>::grow_alloc_region_count(uint count) {
-  shenandoah_assert_heaplocked_or_safepoint();
-  const uint new_count = MAX2(_alloc_region_count, MIN2(count, MAX_ALLOC_REGIONS));
-#ifdef ASSERT
-  // The slots being newly exposed (index in [_alloc_region_count, new_count)) must be empty: they
-  // were outside the active range, so no allocation could have installed a region there. A non-null
-  // slot here would mean a region was stranded above the old count and is about to become reachable
-  // with stale accounting.
-  for (uint i = _alloc_region_count; i < new_count; i++) {
-    assert(_alloc_regions[i].load_relaxed() == nullptr, "Newly exposed slot %u must be empty", i);
-  }
-#endif
-  // Grow only: existing occupied slots keep serving; only higher-indexed slots become newly
-  // reachable. Never lower the count here, which would strand an occupied slot.
-  _alloc_region_count = new_count;
-}
-
-template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint slot) {
   shenandoah_assert_heaplocked();
   ShenandoahHeapRegion* alloc_region = _alloc_regions[slot].load_acquire();

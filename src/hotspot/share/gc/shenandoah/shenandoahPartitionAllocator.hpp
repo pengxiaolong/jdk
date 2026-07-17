@@ -54,7 +54,7 @@ private:
   // fixed at construction. For the collector/old-collector partitions it is (re)sized per evacuation
   // to match the evac worker count -- see set_alloc_region_count / grow_alloc_region_count, which are
   // only called at a safepoint while these slots are released (or, for grow, monotonically increased).
-  uint _alloc_region_count;
+  uint const _alloc_region_count;
 
   // Stripe array of cached alloc regions. Each slot holds a region with remaining capacity that is
   // bump-allocated lock-free via CAS, or nullptr when the slot is empty. A slot is cleared when its
