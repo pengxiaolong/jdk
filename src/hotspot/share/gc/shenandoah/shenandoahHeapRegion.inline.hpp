@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2015, 2019, Red Hat, Inc. All rights reserved.
  * Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
- * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2025, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,7 +38,7 @@ HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
   assert(size >= ShenandoahHeap::min_fill_size(), "Cannot fill unless min fill size");
 
-  HeapWord* obj = top();
+  HeapWord* obj = stable_top();
   HeapWord* new_top = obj + size;
   ShenandoahHeap::fill_with_object(obj, size);
   set_top(new_top);
@@ -52,9 +52,10 @@ HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
 
 HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocRequest& req) {
   shenandoah_assert_heaplocked_or_safepoint();
+  assert(!is_atomic_alloc_region(), "Must not");
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
-  HeapWord* obj = top();
+  HeapWord* obj = stable_top();
   if (pointer_delta(end(), obj) >= size) {
     make_regular_allocation(req.affiliation());
     adjust_alloc_metadata(req, size);
@@ -71,16 +72,112 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocReque
   }
 }
 
+HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& req, bool &ready_for_replenish) {
+  const size_t size = req.size();
+  assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
+
+  // Relaxed read: the value is only the expected operand of try_allocate's release CAS, which
+  // validates it. See atomic_top_relaxed().
+  HeapWord* obj = atomic_top_relaxed();
+  if (obj == nullptr) {
+    // _atomic_top has been updated to nullptr, it is not allowed to do atomic alloc
+    return nullptr;
+  }
+
+  // The loop always returns from within its body.
+  for (;;) {
+    size_t free_words = pointer_delta(end(), obj);
+    if (free_words >= size) {
+      if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
+        adjust_alloc_metadata(req, size);
+        ready_for_replenish = (free_words - size) < ShenandoahHeap::plab_min_size();
+        return obj;
+      }
+      if (obj == nullptr) {
+        // _atomic_top has been updated to nullptr, it is not allowed to retry atomic alloc
+        return nullptr;
+      }
+    } else {
+      // Region cannot satisfy this request. Mark it for replenish only when it has no room for any
+      // minimum LAB (truly full); otherwise leave it, since a smaller future request may still fit, and
+      // retiring it here would discard usable capacity to one oversized request. Note free_words < size
+      // here, so do not compute free_words - size (unsigned underflow).
+      ready_for_replenish = free_words < ShenandoahHeap::plab_min_size();
+      return nullptr;
+    }
+    SpinPause(); // Spin pause on contention.
+  }
+}
+
+HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size, bool &ready_for_replenish) {
+  assert(req.is_lab_alloc(), "Only lab alloc");
+
+  const size_t req_size = req.size();
+  const size_t min_size = req.min_size();
+  // Relaxed read: the value is only the expected operand of try_allocate's release CAS, which
+  // validates it. See atomic_top_relaxed().
+  HeapWord* obj = atomic_top_relaxed();
+  if (obj == nullptr) {
+    // _atomic_top has been updated to nullptr, it is not allowed to do atomic alloc
+    return nullptr;
+  }
+  // The loop always returns from within its body.
+  for (;;) {
+    size_t adjusted_size = req_size;
+    size_t free_words = pointer_delta(end(), obj);
+    size_t aligned_free_words = align_down(free_words, MinObjAlignment);
+    if (adjusted_size > aligned_free_words) {
+      adjusted_size = aligned_free_words;
+    }
+    if (adjusted_size >= min_size) {
+      if (try_allocate(obj /*value*/, adjusted_size, obj /*reference*/)) {
+        actual_size = adjusted_size;
+        adjust_alloc_metadata(req, adjusted_size);
+        ready_for_replenish = free_words - adjusted_size < ShenandoahHeap::plab_min_size();
+        return obj;
+      }
+
+      if (obj == nullptr) {
+        // _atomic_top has been updated to nullptr, it is not allowed to retry atomic alloc
+        return nullptr;
+      }
+    } else {
+      log_trace(gc, free)("Failed to shrink TLAB or GCLAB request (%zu) in region %zu to %zu"
+                          " because min_size() is %zu", req_size, index(), adjusted_size, min_size);
+      // Region cannot satisfy even the minimum LAB. Mark for replenish only when it has no room for
+      // any minimum LAB (truly full); free_words is the region's actual remaining capacity here.
+      ready_for_replenish = free_words < ShenandoahHeap::plab_min_size();
+      return nullptr;
+    }
+    SpinPause(); // Spin pause on contention.
+  }
+}
+
+bool ShenandoahHeapRegion::try_allocate(HeapWord* const obj, size_t const size, HeapWord* &prior_atomic_top) {
+  HeapWord* new_top = obj + size;
+  if ((prior_atomic_top = _atomic_top.compare_exchange(obj, new_top, memory_order_release)) == obj) {
+    assert(is_object_aligned(new_top), "new top breaks alignment: " PTR_FORMAT, p2i(new_top));
+    assert(is_object_aligned(obj),     "obj is not aligned: "       PTR_FORMAT, p2i(obj));
+    return true;
+  }
+  return false;
+}
+
 inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t size) {
   // Only need to update alloc metadata for lab alloc, shared alloc is counted implicitly by tlab/gclab allocs
-  if (req.is_lab_alloc()) {
-    if (req.is_mutator_alloc()) {
-      _tlab_allocs += size;
-    } else if (req.is_old()) {
-      _plab_allocs += size;
-    } else {
-      _gclab_allocs += size;
-    }
+  switch (req.type()) {
+    case ShenandoahAllocRequest::_alloc_tlab:
+      _tlab_allocs.add_then_fetch(size, memory_order_relaxed);
+      break;
+    case ShenandoahAllocRequest::_alloc_gclab:
+      _gclab_allocs.add_then_fetch(size, memory_order_relaxed);
+      break;
+    case ShenandoahAllocRequest::_alloc_plab:
+      _plab_allocs.add_then_fetch(size, memory_order_relaxed);
+      break;
+    default:
+      assert(!req.is_lab_alloc(), "Unrecognized LAB allocation type");
+      break;
   }
 }
 
@@ -189,10 +286,14 @@ inline bool ShenandoahHeapRegion::is_affiliated() const {
 }
 
 inline void ShenandoahHeapRegion::save_top_before_promote() {
-  _top_before_promoted = _top;
+  assert(!is_atomic_alloc_region(), "Must not");
+  assert(atomic_top() == nullptr, "Must be");
+  _top_before_promoted = stable_top();
 }
 
 inline void ShenandoahHeapRegion::restore_top_before_promote() {
+  assert(!is_atomic_alloc_region(), "Must not");
+  assert(atomic_top() == nullptr, "Must be");
   _top = _top_before_promoted;
   _top_before_promoted = nullptr;
  }

@@ -398,6 +398,23 @@
           "reserve/waste is incorrect, at the risk that application "       \
           "runs out of memory too early.")                                  \
                                                                             \
+  product(uint, ShenandoahMutatorAllocRegions, 0, EXPERIMENTAL,             \
+          "Number of CAS alloc regions striped across the mutator "         \
+          "allocator. Threads probe a per-thread slot for lock-free "       \
+          "allocation to spread contention. 0 (default) derives the value " \
+          "from CPU count and heap size; 1 disables striping.")             \
+          range(0, 128)                                                     \
+                                                                            \
+  product(uint, ShenandoahCollectorAllocRegions, 4, EXPERIMENTAL,           \
+          "Number of CAS alloc regions striped across each collector "      \
+          "allocator (young Collector and OldCollector) to spread "         \
+          "GC-worker evacuation-allocation contention. Each reserved slot " \
+          "pre-charges its remaining capacity as used, drawn from the "     \
+          "bounded evacuation reserve, so a larger value reduces the "      \
+          "effective reserve; on small heaps this can increase "            \
+          "overflow into the mutator partition. 1 disables striping.")      \
+          range(1, 128)                                                     \
+                                                                            \
   product(uintx, ShenandoahOldEvacPercent, 75, EXPERIMENTAL,                \
           "The maximum evacuation to old-gen expressed as a percent of "    \
           "the total live memory within the collection set.  With the "     \

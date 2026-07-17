@@ -1,6 +1,6 @@
 /*
  * Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
- * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2025, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -417,6 +417,12 @@ void ShenandoahOldHeuristics::prepare_for_old_collections() {
     if (!region->is_old()) {
       continue;
     }
+
+    // An active CAS alloc region can never reach here: OldGC releases the collector and
+    // old-collector alloc regions before old cset selection, and mutator alloc regions are young
+    // (filtered out by the is_old() check above). So no live alloc region is ever trashed or made a
+    // candidate.
+    assert(!region->is_atomic_alloc_region(), "Old alloc regions must be released before old cset selection");
 
     size_t garbage = region->garbage();
     size_t live_bytes = region->get_live_data_bytes();

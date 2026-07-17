@@ -38,11 +38,12 @@ typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector>
 // to the appropriate per-partition allocator (mutator, collector, or old-collector).
 // Both paths run under the heap lock.
 class ShenandoahAllocator : public CHeapObj<mtGC> {
+  friend class VMStructs;
 private:
   ShenandoahFreeSet*                  _free_set;
-  ShenandoahMutatorAllocator          _mutator_alloc;
-  ShenandoahCollectorAllocator        _collector_alloc;
-  ShenandoahOldCollectorAllocator     _old_collector_alloc;
+  ShenandoahMutatorAllocator          _mutator_allocator;
+  ShenandoahCollectorAllocator        _collector_allocator;
+  ShenandoahOldCollectorAllocator     _old_collector_allocator;
 
 public:
   ShenandoahAllocator(ShenandoahFreeSet* free_set);
@@ -55,9 +56,42 @@ public:
   // whether the returned address is the first allocation in a freshly acquired region.
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 
-  // Release the cached alloc region in every partition allocator. Call before the
+  // Release the cached alloc regions in every partition allocator. Call before the
   // free set is rebuilt, since rebuild may reclassify region affiliation/membership.
   void release_alloc_regions();
+
+  // Release the cached alloc region of the collector and old-collector partition allocators
+  // only, leaving the mutator allocator untouched. Call at the evacuation/update-refs boundary
+  // so that regions holding evacuated objects sync their _atomic_top to _top and advance their
+  // update watermark before update-refs iterates the heap, while mutators keep allocating.
+  void release_collector_alloc_regions();
+
+  // Proactively fill empty mutator CAS allocation-region slots. Caller must hold the heap lock.
+  void reserve_mutator_alloc_regions();
+
+  // Proactively fill empty collector CAS allocation-region slots and, in generational mode,
+  // old-collector slots from their own partitions. Caller must hold the heap lock. Reserve overflow
+  // remains on the allocation path.
+  void reserve_collector_alloc_regions();
+
+  // Size the collector stripe slots and, in generational mode, old-collector slots to the number of
+  // evacuation workers, so the slot count tracks actual evac contention instead of a fixed default.
+  // Call at a safepoint before evacuation begins, while the collector alloc regions are released
+  // (they are, at the evac-enabling safepoint). See
+  // ShenandoahPartitionAllocator::set_alloc_region_count.
+  void set_collector_alloc_region_count(uint workers);
+
+  // Grow-only variant for a degenerated cycle that escalates to more workers than the in-flight
+  // concurrent evacuation was sized for. Safe to call while collector alloc regions are still
+  // occupied. OldCollector is grown only in generational mode. See
+  // ShenandoahPartitionAllocator::grow_alloc_region_count.
+  void grow_collector_alloc_region_count(uint workers);
+
+  // Read-time accounting correction term for the given partition's cached alloc region: the
+  // bytes that were pre-charged to the partition's used at reserve time but are not yet
+  // actually consumed (the region's current free()). Returns 0 if no region is cached.
+  // See ShenandoahPartitionAllocator::remnant_bytes.
+  size_t remnant_bytes(ShenandoahFreeSetPartitionId partition) const;
 };
 
 #endif // SHARE_GC_SHENANDOAH_SHENANDOAHALLOCATOR_HPP

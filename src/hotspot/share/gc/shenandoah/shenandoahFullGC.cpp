@@ -33,6 +33,7 @@
 #include "gc/shared/tlab_globals.hpp"
 #include "gc/shared/workerThread.hpp"
 #include "gc/shenandoah/heuristics/shenandoahHeuristics.hpp"
+#include "gc/shenandoah/shenandoahAllocator.hpp"
 #include "gc/shenandoah/shenandoahClosures.inline.hpp"
 #include "gc/shenandoah/shenandoahCollectionSet.hpp"
 #include "gc/shenandoah/shenandoahCollectorPolicy.hpp"
@@ -227,6 +228,10 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
     heap->tlabs_retire(ResizeTLAB);
   }
 
+  // Release all cached CAS alloc regions before Full GC walks the heap, so that no region
+  // remains an active alloc region while marking, address calculation, and compaction run.
+  heap->free_set()->release_alloc_regions_under_lock();
+
   OrderAccess::fence();
 
   phase1_mark_heap();
@@ -275,6 +280,11 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
 
   heap->set_full_gc_move_in_progress(false);
   heap->set_full_gc_in_progress(false);
+
+  {
+    ShenandoahHeapLocker locker(heap->lock());
+    heap->allocator()->reserve_mutator_alloc_regions();
+  }
 
   DEBUG_ONLY(heap->assert_no_self_forwards());
 

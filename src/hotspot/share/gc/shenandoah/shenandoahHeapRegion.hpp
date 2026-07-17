@@ -256,11 +256,13 @@ private:
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
   // Frequently updated fields
-  HeapWord* _top;
-
-  size_t _tlab_allocs;
-  size_t _gclab_allocs;
-  size_t _plab_allocs;
+  HeapWord* volatile _top;
+  shenandoah_padding(0);
+  Atomic<HeapWord*> _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
+  shenandoah_padding(1);
+  Atomic<size_t> _tlab_allocs;
+  Atomic<size_t> _gclab_allocs;
+  Atomic<size_t> _plab_allocs;
 
   Atomic<size_t> _live_data;
   Atomic<size_t> _critical_pins;
@@ -269,9 +271,13 @@ private:
 
   Atomic<HeapWord*> _update_watermark;
 
-  uint _age;
+  Atomic<uint> _age;
   bool _promoted_in_place;
-  CENSUS_NOISE(uint _youth;)   // tracks epochs of retrograde ageing (rejuvenation)
+  // Tracks epochs of retrograde ageing (rejuvenation). Atomic for the same reason as _age:
+  // reset_age() updates it on the lock-free retire path (unset_active_alloc_region), while
+  // youth() is read off-lock by marking workers in count_liveness. A plain uint RMW there
+  // would be a data race against those concurrent reads.
+  CENSUS_NOISE(Atomic<uint> _youth;)
 
   ShenandoahSharedFlag _recycling; // Used to indicate that the region is being recycled; see try_recycle*().
 
@@ -283,6 +289,33 @@ private:
   // This is only read/written by a gc worker to avoid unnecessary bitmap resets
   bool _needs_bitmap_reset;
 
+  // Indicates that this region is currently reserved as an active CAS alloc
+  // slot of a collector / old-collector ShenandoahAllocator, and may
+  // therefore receive evacuation-copy writes that have not yet been covered
+  // by _update_watermark. Read on the barrier fast path via
+  // ShenandoahBarrierSet::need_bulk_update to force bulk updates over the
+  // region while it is active.
+  //
+  // Ordering contract:
+  //   - Writers use release_store for both true and false transitions.
+  //   - Readers use load_acquire. Observing `false` implies the preceding
+  //     writer stores, notably set_update_watermark(r->stable_top()) in
+  //     release_alloc_regions, are also visible.
+  //   - On reserve, the flag is set BEFORE set_active_alloc_region(), so
+  //     any thread that can reach the region via an _alloc_regions slot or
+  //     its _atomic_top also observes the flag as true.
+  //   - On release, the flag is cleared AFTER unset_active_alloc_region()
+  //     and set_update_watermark(), so any thread observing the flag as
+  //     false also observes the final _top and _update_watermark.
+  //
+  // Writers (all in ShenandoahPartitionAllocator):
+  //   - try_install_alloc_region   (set true on the newly installed collector region)
+  //   - try_install_alloc_region   (set false on the displaced occupant when the publish CAS wins)
+  //   - try_atomic_allocate_in      (set false on the lock-free retire of a filled region)
+  //   - release_alloc_region        (set false on release at a GC phase boundary)
+  // Readers:
+  //   - ShenandoahBarrierSet::need_bulk_update       (barrier fast path)
+  Atomic<bool> _collector_allocator_reserved;
 public:
   ShenandoahHeapRegion(HeapWord* start, size_t index, bool committed);
 
@@ -393,6 +426,16 @@ public:
   // Allocate fill after top
   inline HeapWord* allocate_fill(size_t word_size);
 
+  // Allocate object with CAS, return nullptr if full or not enough space for the req
+  inline HeapWord* allocate_atomic(const ShenandoahAllocRequest &req, bool &ready_for_replenish);
+
+  // Allocate lab with CAS, return nullptr if full or not enough space for the req
+  inline HeapWord* allocate_lab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size, bool &ready_for_replenish);
+
+  // Use AtomicAccess::cmpxchg to allocate the object,
+  // prior value of _atomic_top will be always written to reference prior_atomic_top.
+  inline bool try_allocate(HeapWord* const obj, size_t const size, HeapWord* &prior_atomic_top);
+
   inline void clear_live_data();
   void set_live_data(size_t s);
 
@@ -466,19 +509,82 @@ public:
   // Find humongous start region that this region belongs to
   ShenandoahHeapRegion* humongous_start_region() const;
 
-  HeapWord* top() const         { return _top;     }
-  void set_top(HeapWord* v)     { _top = v;        }
+  HeapWord* atomic_top() const {
+    return _atomic_top.load_acquire();
+  }
 
-  HeapWord* new_top() const     { return _new_top; }
-  void set_new_top(HeapWord* v) { _new_top = v;    }
+  // Relaxed read of _atomic_top for the lock-free allocation loops only. The value is used solely as
+  // the expected operand of the subsequent release compare_exchange, which is the authoritative
+  // check: if the region was retired (_atomic_top set to nullptr) the CAS fails and returns the true
+  // current value, so a stale read here cannot cause an incorrect allocation. Object publication is
+  // ordered by the release CAS, not by this read, so no acquire is needed. Other readers (top(),
+  // accounting) must use atomic_top()/top() with acquire semantics.
+  HeapWord* atomic_top_relaxed() const {
+    return _atomic_top.load_relaxed();
+  }
+
+  // Default top(). Returns _atomic_top when the region is an active CAS alloc
+  // region, else _top. Safe to call from any context. Inside an active alloc
+  // region the returned value may advance concurrently; outside it is stable.
+  // Prefer this form unless you specifically need to assert that no
+  // concurrent allocation can be happening.
+  HeapWord* top() const {
+    HeapWord* at = atomic_top();
+    return at == nullptr ? AtomicAccess::load_acquire(&_top) : at;
+  }
+
+  // Relaxed counterpart of top(), for best-effort size readers that only use the result
+  // arithmetically and never dereference memory at the returned address (e.g. the alloc-region
+  // free scan in ShenandoahPartitionAllocator::remnant_bytes). It drops the acquire
+  // ordering of top(): there are no subsequent dependent loads to order, so the acquire would be
+  // pure overhead. A pointer load is single-copy-atomic and _atomic_top only advances within
+  // [bottom, end], so the value is always a valid (possibly stale) top <= end.
+  HeapWord* top_relaxed() const {
+    HeapWord* at = atomic_top_relaxed();
+    return at == nullptr ? AtomicAccess::load(&_top) : at;
+  }
+
+  // Stable top. Asserts the region is NOT an active CAS alloc region, so
+  // reading _top directly is guaranteed to observe the authoritative top.
+  // Use for callers that establish this invariant by construction, e.g.,
+  //   - while holding the heap lock outside of the active allocator paths,
+  //   - at a safepoint after release_alloc_regions(),
+  //   - on regions that never enter the active state (cset, trash,
+  //     humongous, newly-created, in-construction).
+  HeapWord* stable_top() const {
+    assert(!is_atomic_alloc_region(),
+           "Region is active for CAS alloc; use top() for a concurrent snapshot");
+    return AtomicAccess::load_acquire(&_top);
+  }
+
+  void set_top(HeapWord* v) {
+    assert(!is_atomic_alloc_region(), "Must not be an atomic alloc region");
+    _top = v;
+  }
+
+  HeapWord* new_top() const {
+    assert(atomic_top() == nullptr, "Must be");
+    return _new_top;
+  }
+
+  void set_new_top(HeapWord* v) {
+    assert(atomic_top() == nullptr, "Must be");
+    _new_top = v;
+  }
 
   HeapWord* bottom() const      { return _bottom;  }
   HeapWord* end() const         { return _end;     }
 
   size_t capacity() const       { return byte_size(bottom(), end()); }
+  // used()/free()/free_words() use top(), which is safe in any context.
+  // For stable snapshots, use the stable_* variants which assert the region
+  // is not an active CAS alloc region.
   size_t used() const           { return byte_size(bottom(), top()); }
   size_t used_before_promote() const { return byte_size(bottom(), get_top_before_promote()); }
   size_t free() const           { return byte_size(top(),    end()); }
+  size_t free_words() const     { return pointer_delta(end(), top()); }
+  // Relaxed, best-effort free(); see top_relaxed(). For size estimates that never dereference top.
+  size_t free_relaxed() const   { return byte_size(top_relaxed(), end()); }
 
   // Does this region contain this address?
   bool contains(HeapWord* p) const {
@@ -502,23 +608,24 @@ public:
   void set_affiliation(ShenandoahAffiliation new_affiliation);
 
   // Region ageing and rejuvenation
-  uint age() const { return _age; }
-  CENSUS_NOISE(uint youth() const { return _youth; })
+  uint age() const { return _age.load_relaxed(); }
+  CENSUS_NOISE(uint youth() const { return _youth.load_relaxed(); })
 
   void increment_age() {
-    const uint max_age = markWord::max_age;
-    assert(_age <= max_age, "Error");
-    if (_age++ >= max_age) {
-      _age = max_age;   // clamp
+    const uint current_age = age();
+    assert(current_age <= markWord::max_age, "Error");
+    if (current_age < markWord::max_age) {
+      const uint old = _age.compare_exchange(current_age, current_age + 1, memory_order_relaxed);
+      assert(old == current_age || old == 0u, "Only fail when any mutator reset the age.");
     }
   }
 
   void reset_age() {
-    CENSUS_NOISE(_youth += _age;)
-    _age = 0;
+    CENSUS_NOISE(_youth.add_then_fetch(age(), memory_order_relaxed);)
+    _age.store_relaxed(0);
   }
 
-  CENSUS_NOISE(void clear_youth() { _youth = 0; })
+  CENSUS_NOISE(void clear_youth() { _youth.store_relaxed(0u); })
 
   inline bool need_bitmap_reset() const {
     return _needs_bitmap_reset;
@@ -530,6 +637,69 @@ public:
 
   inline void unset_needs_bitmap_reset() {
     _needs_bitmap_reset = false;
+  }
+
+  inline void set_active_alloc_region() {
+    shenandoah_assert_heaplocked();
+    assert(atomic_top() == nullptr, "Must be");
+    // Sync _top to _atomic_top to set the region as an active atomic alloc region
+    _atomic_top.release_store(stable_top());
+  }
+
+  // Unset a heap region as active alloc region. Called by ShenandoahPartitionAllocator when the
+  // region is removed from its _alloc_regions slot: try_install_alloc_region (when undoing an
+  // install that lost the publish CAS), try_atomic_allocate_in (lock-free retire of a filled
+  // region), and release_alloc_region (release at a GC phase boundary).
+  inline bool unset_active_alloc_region() {
+    // Retire the region from CAS allocation by resetting _atomic_top to
+    // nullptr, and sync the current _atomic_top back to _top so that readers
+    // going through top() (which falls back to _top when atomic_top() is
+    // nullptr) continue to see the correct high-water mark.
+    //
+    // Store order matters here: _top must be updated BEFORE the CAS that
+    // resets _atomic_top. Any reader that observes atomic_top() == nullptr
+    // has, by the acquire load in atomic_top(), also observed the release CAS
+    // below, and therefore the preceding release_store to _top. Storing _top
+    // after the CAS would open a window in which a reader sees
+    // atomic_top() == nullptr with a stale _top and concludes, incorrectly,
+    // that a just-allocated object lies past top().
+    //
+    // The CAS may fail if a concurrent allocator bumped _atomic_top. On
+    // retry, current_atomic_top only grows, so re-storing it to _top is
+    // monotonic.
+    shenandoah_assert_heaplocked();
+    HeapWord* const top_before_sync = AtomicAccess::load(&_top);
+    HeapWord* prior_atomic_top = nullptr;
+    HeapWord* current_atomic_top = nullptr;
+    bool success = false;
+    while ((current_atomic_top = atomic_top()) != nullptr) {
+      AtomicAccess::store(&_top, current_atomic_top);
+      prior_atomic_top = _atomic_top.compare_exchange(current_atomic_top, (HeapWord*) nullptr, memory_order_release);
+      if (prior_atomic_top == current_atomic_top) {
+        success = true;
+        if (current_atomic_top > top_before_sync) {
+          // reset age if there was any allocation in the region after it's reserved as alloc region.
+          reset_age();
+        }
+        assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
+        assert(!is_atomic_alloc_region(), "Must not");
+        break;
+      }
+    }
+    return success;
+  }
+
+  bool is_atomic_alloc_region() const {
+    // region is an active atomic alloc region if the atomic top is set
+    return atomic_top() != nullptr;
+  }
+
+  void set_collector_allocator_reserved(bool is_collector_allocator_reserved) {
+    _collector_allocator_reserved.release_store(is_collector_allocator_reserved);
+  }
+
+  bool is_collector_allocator_reserved() const {
+    return _collector_allocator_reserved.load_acquire();
   }
 
   // Self-forward accounting: set by an evacuating thread after it successfully

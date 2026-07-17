@@ -25,6 +25,7 @@
 
 
 #include "gc/shared/collectorCounters.hpp"
+#include "gc/shenandoah/shenandoahAllocator.hpp"
 #include "gc/shenandoah/shenandoahCollectorPolicy.hpp"
 #include "gc/shenandoah/shenandoahConcurrentMark.hpp"
 #include "gc/shenandoah/shenandoahDegeneratedGC.hpp"
@@ -264,6 +265,20 @@ void ShenandoahDegenGC::op_degenerated() {
 
           heap->collection_set()->clear_current_index();
         }
+
+        // Size the collector CAS alloc-region stripes for the STW evacuation about to run. Degen
+        // evacuates with up to ParallelGCThreads workers, which may exceed the ConcGCThreads the
+        // stripes were sized for at the concurrent evac's final-mark safepoint. Grow-only: if we
+        // degenerated mid-evac the collector slots may still be occupied, so we must not lower the
+        // count (that would strand them); newly-added workers simply map to the higher slots. Fill
+        // any empty slots from their own collector partitions before evacuation resumes; reserve
+        // overflow into the mutator partition remains on the actual allocation path.
+        {
+          ShenandoahHeapLocker locker(heap->lock());
+          heap->allocator()->grow_collector_alloc_region_count(ShenandoahWorkerPolicy::calc_workers_for_stw_degenerated());
+          heap->allocator()->reserve_collector_alloc_regions();
+        }
+
         op_evacuate();
         if (heap->cancelled_gc()) {
           op_degenerated_fail();
@@ -306,6 +321,11 @@ void ShenandoahDegenGC::op_degenerated() {
       ShenandoahCodeRoots::disarm_nmethods();
 
       op_cleanup_complete();
+
+      {
+        ShenandoahHeapLocker locker(heap->lock());
+        heap->allocator()->reserve_mutator_alloc_regions();
+      }
 
       if (heap->mode()->is_generational()) {
         ShenandoahGenerationalHeap::heap()->complete_degenerated_cycle();
@@ -367,6 +387,11 @@ void ShenandoahDegenGC::op_prepare_evacuation() {
   // STW cleanup weak roots and unload classes
   heap->parallel_cleaning(_generation, false /*full gc*/);
 
+  // Release all cached CAS alloc regions (mutator and collector) before choosing the collection
+  // set. We are at a safepoint here, so releasing mutator regions is safe: no mutator can be
+  // concurrently allocating into them. See ShenandoahConcurrentGC::op_final_mark.
+  heap->free_set()->release_alloc_regions_under_lock();
+
   // Prepare regions and collection set
   _generation->prepare_regions_and_collection_set(false /*concurrent*/);
 
@@ -418,6 +443,10 @@ void ShenandoahDegenGC::op_evacuate() {
 void ShenandoahDegenGC::op_init_update_refs() {
   // Evacuation has completed
   ShenandoahHeap* const heap = ShenandoahHeap::heap();
+  // Release the collector alloc regions reserved during evacuation before update-refs, so
+  // that regions holding evacuated objects sync their _atomic_top to _top and advance their
+  // update watermark before the heap is iterated.
+  heap->free_set()->release_collector_alloc_regions_under_lock();
   heap->prepare_update_heap_references();
   heap->set_update_refs_in_progress(true);
 }
