@@ -230,7 +230,7 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
 
   // Release all cached CAS alloc regions before Full GC walks the heap, so that no region
   // remains an active alloc region while marking, address calculation, and compaction run.
-  heap->allocator()->release_mutator_alloc_regions();
+  heap->allocator()->release_mutator_alloc_regions_under_lock();
 
   OrderAccess::fence();
 
@@ -281,7 +281,7 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
   heap->set_full_gc_move_in_progress(false);
   heap->set_full_gc_in_progress(false);
 
-  heap->allocator()->reserve_mutator_alloc_regions();
+  heap->allocator()->reserve_mutator_alloc_regions_under_lock();
 
   DEBUG_ONLY(heap->assert_no_self_forwards());
 

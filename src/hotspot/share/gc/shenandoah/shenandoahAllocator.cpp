@@ -113,12 +113,12 @@ void ShenandoahAllocator::release_collector_alloc_regions_under_lock() {
 }
 
 
-void ShenandoahAllocator::release_mutator_alloc_regions() {
+void ShenandoahAllocator::release_mutator_alloc_regions_under_lock() {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
   _mutator_allocator.release_alloc_regions();
 }
 
-void ShenandoahAllocator::reserve_collector_alloc_regions() {
+void ShenandoahAllocator::reserve_collector_alloc_regions_under_lock() {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
   _collector_allocator.reserve_alloc_regions();
   if (ShenandoahHeap::heap()->mode()->is_generational()) {
@@ -126,7 +126,7 @@ void ShenandoahAllocator::reserve_collector_alloc_regions() {
   }
 }
 
-void ShenandoahAllocator::reserve_mutator_alloc_regions() {
+void ShenandoahAllocator::reserve_mutator_alloc_regions_under_lock() {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
   _mutator_allocator.reserve_alloc_regions();
 }

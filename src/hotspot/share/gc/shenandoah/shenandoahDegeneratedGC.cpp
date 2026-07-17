@@ -308,7 +308,7 @@ void ShenandoahDegenGC::op_degenerated() {
 
       op_cleanup_complete();
 
-      heap->allocator()->reserve_mutator_alloc_regions();
+      heap->allocator()->reserve_mutator_alloc_regions_under_lock();
 
       if (heap->mode()->is_generational()) {
         ShenandoahGenerationalHeap::heap()->complete_degenerated_cycle();
@@ -371,7 +371,7 @@ void ShenandoahDegenGC::op_prepare_evacuation() {
   heap->parallel_cleaning(_generation, false /*full gc*/);
 
   // Release all cached CAS alloc regions before choosing the collection set.
-  heap->allocator()->release_mutator_alloc_regions();
+  heap->allocator()->release_mutator_alloc_regions_under_lock();
 
   // Prepare regions and collection set
   _generation->prepare_regions_and_collection_set(false /*concurrent*/);
@@ -393,7 +393,7 @@ void ShenandoahDegenGC::op_prepare_evacuation() {
 
     heap->set_evacuation_in_progress(true);
     heap->set_has_forwarded_objects(true);
-    heap->allocator()->reserve_collector_alloc_regions();
+    heap->allocator()->reserve_collector_alloc_regions_under_lock();
   } else {
     if (ShenandoahVerify) {
       if (has_in_place_promotions(heap)) {

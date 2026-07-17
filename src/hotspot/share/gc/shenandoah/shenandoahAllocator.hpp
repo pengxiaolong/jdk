@@ -61,15 +61,15 @@ public:
 
   void release_collector_alloc_regions_under_lock();
 
-  void release_mutator_alloc_regions();
+  void release_mutator_alloc_regions_under_lock();
 
   // Proactively fill empty collector CAS allocation-region slots and, in generational mode,
   // old-collector slots from their own partitions. Caller must hold the heap lock. Reserve overflow
   // remains on the allocation path.
-  void reserve_collector_alloc_regions();
+  void reserve_collector_alloc_regions_under_lock();
 
   // Proactively fill empty mutator CAS allocation-region slots. Caller must hold the heap lock.
-  void reserve_mutator_alloc_regions();
+  void reserve_mutator_alloc_regions_under_lock();
 
   // Read-time accounting correction term for the given partition's cached alloc region: the
   // bytes that were pre-charged to the partition's used at reserve time but are not yet

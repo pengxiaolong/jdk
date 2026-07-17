@@ -802,7 +802,7 @@ void ShenandoahConcurrentGC::op_final_mark() {
     JvmtiTagMap::set_needs_cleaning();
 
     // Release all cached CAS alloc regions before choosing the collection set.
-    heap->allocator()->release_mutator_alloc_regions();
+    heap->allocator()->release_mutator_alloc_regions_under_lock();
 
     // The collection set is chosen by prepare_regions_and_collection_set(). Additionally, certain parameters have been
     // established to govern the evacuation efforts that are about to begin.  Refer to comments on reserve members in
@@ -843,9 +843,9 @@ void ShenandoahConcurrentGC::op_final_mark() {
         }
       }
     }
-    heap->allocator()->reserve_mutator_alloc_regions();
+    heap->allocator()->reserve_mutator_alloc_regions_under_lock();
     if (!heap->collection_set()->is_empty()) {
-      heap->allocator()->reserve_collector_alloc_regions();
+      heap->allocator()->reserve_collector_alloc_regions_under_lock();
     }
   }
 
