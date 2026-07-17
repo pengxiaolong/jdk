@@ -344,9 +344,9 @@ size_t ShenandoahFreeSet::retire_region(ShenandoahFreeSetPartitionId partition, 
 }
 
 size_t ShenandoahFreeSet::alloc_region_correction(ShenandoahFreeSetPartitionId partition) const {
-  // The allocator does not exist yet during early freeset construction; no region is cached.
-  ShenandoahAllocator* allocator = _heap->allocator();
-  return allocator == nullptr ? 0 : allocator->remnant_bytes(partition);
+  ShenandoahAllocator* const allocator = _heap->allocator();
+  assert(allocator != nullptr, "Allocator must have been initialized");
+  return allocator->remnant_bytes(partition);
 }
 
 // Used/available accessors below compensate for the CAS alloc-region pre-charge. retire_region()
