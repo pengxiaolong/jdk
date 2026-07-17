@@ -37,9 +37,8 @@
 template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint alloc_region_count)
   : _free_set(free_set),
-    _alloc_region_count(alloc_region_count),
-   _alloc_region_slot_mask(alloc_region_count - 1u) {
-  assert(is_power_of_2(alloc_region_count), "Must be power of 2");
+    _alloc_region_count(clamped_alloc_region_count(alloc_region_count)),
+    _alloc_region_slot_mask(_alloc_region_count - 1u) {
   for (uint i = 0; i < MAX_ALLOC_REGIONS; i++) {
     _alloc_regions[i].store_relaxed(nullptr);
   }
@@ -71,11 +70,11 @@ uint ShenandoahPartitionAllocator<PARTITION>::alloc_region_slot(Thread* thread) 
 template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions(ShenandoahAllocRequest& req,
                                                                                  bool& in_new_region,
-                                                                                 uint start_index,
-                                                                                 uint end_index) {
-  assert(end_index < _alloc_region_count, "Must be");
-  uint i = start_index;
-  while (i != end_index) {
+                                                                                 const uint start_slot,
+                                                                                 const uint count) {
+  assert(count < _alloc_region_count, "Must be");
+  uint i = start_slot & _alloc_region_slot_mask;
+  for (uint n = 0; n < count; n++) {
     ShenandoahHeapRegion* r = _alloc_regions[i].load_acquire();
     if (r != nullptr) {
       bool ready_for_replenish = false;
@@ -88,15 +87,13 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
         return obj;
       }
     }
-    if (++i == _alloc_region_count) {
-      i = 0u;
-    }
+    i = (i + 1) & _alloc_region_slot_mask;
   }
   return nullptr;
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(uint slot, ShenandoahHeapRegion* occupant) {
+void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint slot, ShenandoahHeapRegion* occupant) {
   assert(occupant != nullptr && _alloc_regions[slot].load_relaxed() == occupant, "Must be sane");
   _alloc_regions[slot].release_store(nullptr);
 
@@ -109,7 +106,7 @@ void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(uint slot, 
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(uint slot,
+bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uint slot,
                                                                        ShenandoahHeapRegion* occupant,
                                                                        ShenandoahHeapRegion* new_region) {
   shenandoah_assert_heaplocked();
@@ -210,7 +207,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       if (fresh == nullptr) {
         if (_alloc_region_count > 1) {
-          HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) & _alloc_region_slot_mask, slot);
+          HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, slot + 1, _alloc_region_count - 1);
           if (obj != nullptr) {
             return obj;
           }
@@ -254,7 +251,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
       // free set has no region to hand out. Scan all slots under the lock before giving up; this is
       // what keeps a full own-slot from causing a spurious allocation failure.
       if (_alloc_region_count > 1) {
-        HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, (slot + 1) & _alloc_region_slot_mask, slot);
+        HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, slot + 1, _alloc_region_count - 1);
         if (obj != nullptr) {
           return obj;
         }

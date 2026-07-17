@@ -59,7 +59,7 @@ static uint collector_alloc_regions() {
     assert(is_power_of_2(ShenandoahCollectorAllocRegions), "Must be a power of 2");
     return MIN2((uint) ShenandoahCollectorAllocRegions, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS);
   }
-  const uint worker_bound = ParallelGCThreads;
+  const uint worker_bound = MAX2(ParallelGCThreads, 1u);
   const uint heap_bound = (uint) MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1);
   return round_down_power_of_2(MIN3(worker_bound, heap_bound, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS));
 }

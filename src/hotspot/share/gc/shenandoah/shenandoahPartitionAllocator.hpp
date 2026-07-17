@@ -29,6 +29,7 @@
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "memory/allocation.hpp"
+#include "utilities/powerOfTwo.hpp"
 
 // ShenandoahPartitionAllocator allocates memory for one free-set partition. The fast path is
 // lock-free: it caches a small set of "alloc regions" (a stripe array) and bump-allocates within
@@ -50,6 +51,13 @@ public:
 private:
   ShenandoahFreeSet* const _free_set;
 
+  // Clamp to [1, MAX_ALLOC_REGIONS] and round down to a power of 2, so _alloc_region_count is
+  // always safe to use as a bitmask size regardless of what the caller (or an ergonomic
+  // derivation with a non-power-of-2 input, e.g. ParallelGCThreads) passed in.
+  static uint clamped_alloc_region_count(uint alloc_region_count) {
+    return round_down_power_of_2(MIN2(MAX2(alloc_region_count, 1u), MAX_ALLOC_REGIONS));
+  }
+
   // Number of alloc-region stripe slots in use for this partition, a power of two.
   uint const _alloc_region_count;
   uint const _alloc_region_slot_mask;
@@ -64,13 +72,13 @@ private:
   // in to avoid a repeated Thread::current() on the allocation fast path.
   uint alloc_region_slot(Thread* thread);
 
-  // Under-lock scan of the stripe slots in the half-open range [start_index, end_index), wrapping
-  // around the slot array, used when the free set has no region of its own to hand out: a sibling
-  // slot may still have room. Callers pass start_index = own_slot + 1 and end_index = own_slot to
-  // scan every OTHER slot (the own slot was already probed lock-free and can only have been retired
+  // Under-lock scan of `count` stripe slots starting at start_slot and wrapping around the slot
+  // array, used when the free set has no region of its own to hand out: a sibling slot may still
+  // have room. Callers pass start_slot = own_slot + 1 and count = _alloc_region_count - 1 to scan
+  // every OTHER slot (the own slot was already probed lock-free and can only have been retired
   // since). Collector partitions call this before stealing from the mutator; the mutator calls it as
   // a last resort. Returns the allocation, or nullptr if no slot in the range could satisfy it.
-  HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint start_index, uint end_index);
+  HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint start_slot, uint count);
 
 
   void uninstall_alloc_region(uint slot, ShenandoahHeapRegion* occupant);
@@ -86,7 +94,7 @@ private:
   // free-set member (the caller's allocation from it is already accounted).
   //
   // Returns true if new_region became the slot's active alloc region.
-  bool try_install_alloc_region(uint index, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
+  bool try_install_alloc_region(uint slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
 
   // Allocate within a single region; the caller must guarantee the region has enough free
   // capacity for the request. Handles LAB sizing, updates partition accounting via
