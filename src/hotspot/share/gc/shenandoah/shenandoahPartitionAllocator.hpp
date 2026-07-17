@@ -78,6 +78,7 @@ private:
   // every OTHER slot (the own slot was already probed lock-free and can only have been retired
   // since). Collector partitions call this before stealing from the mutator; the mutator calls it as
   // a last resort. Returns the allocation, or nullptr if no slot in the range could satisfy it.
+  template<bool HEAP_LOCKED>
   HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint start_slot, uint count);
 
   // Uninstall the occupant from the stripe slot.

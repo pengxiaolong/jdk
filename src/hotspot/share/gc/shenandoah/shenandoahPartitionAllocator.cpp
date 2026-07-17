@@ -68,14 +68,18 @@ uint ShenandoahPartitionAllocator<PARTITION>::alloc_region_slot(Thread* thread) 
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
+template<bool HEAP_LOCKED>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions(ShenandoahAllocRequest& req,
                                                                                  bool& in_new_region,
                                                                                  const uint start_slot,
                                                                                  const uint count) {
   assert(count < _alloc_region_count, "Must be");
+  if (HEAP_LOCKED) {
+    shenandoah_assert_heaplocked();
+  }
   uint i = start_slot & _alloc_region_slot_mask;
   for (uint n = 0; n < count; n++) {
-    ShenandoahHeapRegion* r = _alloc_regions[i].load_acquire();
+    ShenandoahHeapRegion* r = HEAP_LOCKED ? _alloc_regions[i].load_relaxed() : _alloc_regions[i].load_acquire();
     if (r != nullptr) {
       bool ready_for_replenish = false;
       HeapWord* obj = try_atomic_allocate_in(r, req, ready_for_replenish);
@@ -207,7 +211,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       if (fresh == nullptr) {
         if (_alloc_region_count > 1) {
-          HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, slot + 1, _alloc_region_count - 1);
+          HeapWord* obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot + 1, _alloc_region_count - 1);
           if (obj != nullptr) {
             return obj;
           }
@@ -251,7 +255,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
       // free set has no region to hand out. Scan all slots under the lock before giving up; this is
       // what keeps a full own-slot from causing a spurious allocation failure.
       if (_alloc_region_count > 1) {
-        HeapWord* obj = try_allocate_in_alloc_regions(req, in_new_region, slot + 1, _alloc_region_count - 1);
+        HeapWord* obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot + 1, _alloc_region_count - 1);
         if (obj != nullptr) {
           return obj;
         }
@@ -375,7 +379,7 @@ void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
 template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint slot) {
   shenandoah_assert_heaplocked();
-  ShenandoahHeapRegion* alloc_region = _alloc_regions[slot].load_acquire();
+  ShenandoahHeapRegion* alloc_region = _alloc_regions[slot].load_relaxed();
   if (alloc_region == nullptr) {
     return;
   }
