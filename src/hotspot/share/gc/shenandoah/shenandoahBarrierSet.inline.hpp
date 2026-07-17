@@ -580,7 +580,7 @@ inline bool ShenandoahBarrierSet::need_bulk_update(HeapWord* ary) const {
   // A region reserved as an active collector CAS alloc region may receive
   // evacuation-copy writes past its update watermark before it is released,
   // so always force the bulk update while it is reserved.
-  if (r->is_collector_allocator_reserved()) {
+  if (r->is_gc_alloc_region()) {
     return true;
   }
   return ary < r->get_update_watermark();

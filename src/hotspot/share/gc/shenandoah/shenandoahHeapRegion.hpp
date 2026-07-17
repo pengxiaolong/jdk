@@ -295,27 +295,7 @@ private:
   // by _update_watermark. Read on the barrier fast path via
   // ShenandoahBarrierSet::need_bulk_update to force bulk updates over the
   // region while it is active.
-  //
-  // Ordering contract:
-  //   - Writers use release_store for both true and false transitions.
-  //   - Readers use load_acquire. Observing `false` implies the preceding
-  //     writer stores, notably set_update_watermark(r->stable_top()) in
-  //     release_alloc_regions, are also visible.
-  //   - On reserve, the flag is set BEFORE set_active_alloc_region(), so
-  //     any thread that can reach the region via an _alloc_regions slot or
-  //     its _atomic_top also observes the flag as true.
-  //   - On release, the flag is cleared AFTER unset_active_alloc_region()
-  //     and set_update_watermark(), so any thread observing the flag as
-  //     false also observes the final _top and _update_watermark.
-  //
-  // Writers (all in ShenandoahPartitionAllocator):
-  //   - try_install_alloc_region   (set true on the newly installed collector region)
-  //   - try_install_alloc_region   (set false on the displaced occupant when the publish CAS wins)
-  //   - try_atomic_allocate_in      (set false on the lock-free retire of a filled region)
-  //   - release_alloc_region        (set false on release at a GC phase boundary)
-  // Readers:
-  //   - ShenandoahBarrierSet::need_bulk_update       (barrier fast path)
-  Atomic<bool> _collector_allocator_reserved;
+  Atomic<bool> _gc_alloc_region;
 public:
   ShenandoahHeapRegion(HeapWord* start, size_t index, bool committed);
 
@@ -694,12 +674,12 @@ public:
     return atomic_top() != nullptr;
   }
 
-  void set_collector_allocator_reserved(bool is_collector_allocator_reserved) {
-    _collector_allocator_reserved.release_store(is_collector_allocator_reserved);
+  void set_gc_alloc_region(const bool is_gc_alloc_region) {
+    _gc_alloc_region.release_store(is_gc_alloc_region);
   }
 
-  bool is_collector_allocator_reserved() const {
-    return _collector_allocator_reserved.load_acquire();
+  bool is_gc_alloc_region() const {
+    return _gc_alloc_region.load_acquire();
   }
 
   // Self-forward accounting: set by an evacuating thread after it successfully

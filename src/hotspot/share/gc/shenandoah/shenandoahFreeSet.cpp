@@ -637,7 +637,7 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
       // invariant (a retired-with-capacity region must be an active alloc region) when the batch's
       // trailing recompute runs. The flag must be set before activation (ordering contract).
       if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-        r->set_collector_allocator_reserved(true);
+        r->set_gc_alloc_region(true);
       }
       r->set_active_alloc_region();
       reserved[reserved_count++] = r;
@@ -2631,7 +2631,7 @@ void ShenandoahFreeSet::prepare_to_rebuild(size_t &young_trashed_regions, size_t
   // Drop the collector/old-collector cached alloc regions before clearing partition state.
   // Mutator alloc regions are intentionally kept active across the rebuild: find_regions_with_
   // alloc_capacity() re-accounts them in place (reproducing the reserve-time pre-charge) rather
-  // than releasing them, so application threads keep their lock-free fast path. 
+  // than releasing them, so application threads keep their lock-free fast path.
   _heap->allocator()->release_collector_alloc_regions();
   // This resets all state information, removing all regions from all sets.
   clear();

@@ -101,7 +101,7 @@ void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint 
   assert(unset, "Should always succeed");
   if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
     occupant->set_update_watermark(occupant->stable_top());
-    occupant->set_collector_allocator_reserved(false);
+    occupant->set_gc_alloc_region(false);
   }
 }
 
@@ -129,7 +129,7 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
   // The flag must be set BEFORE the region becomes an active alloc region, so any thread that can
   // observe the region via _atomic_top also observes the flag as true.
   if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-    new_region->set_collector_allocator_reserved(true);
+    new_region->set_gc_alloc_region(true);
   }
   new_region->set_active_alloc_region();
 
@@ -140,7 +140,7 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
     assert(unset, "Should always succeed");
     if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       occupant->set_update_watermark(occupant->stable_top());
-      occupant->set_collector_allocator_reserved(false);
+      occupant->set_gc_alloc_region(false);
     }
   }
   return true;
@@ -387,7 +387,7 @@ void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint slot) {
     // Cover the objects evacuated into this region so update-refs processes them, then
     // clear the reserved flag so the barrier stops forcing bulk updates over the region.
     alloc_region->set_update_watermark(alloc_region->stable_top());
-    alloc_region->set_collector_allocator_reserved(false);
+    alloc_region->set_gc_alloc_region(false);
   }
   if (alloc_region->free() >> LogHeapWordSize >= ShenandoahHeap::plab_min_size()) {
     // Region is still allocatable: return its unconsumed remnant to the partition and
