@@ -89,7 +89,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
     size_t free_words = pointer_delta(end(), obj);
     if (free_words >= size) {
       if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
-        adjust_alloc_metadata(req, size);
+        adjust_alloc_metadata_atomic(req, size);
         ready_for_replenish = (free_words - size) < ShenandoahHeap::plab_min_size();
         return obj;
       }
@@ -132,7 +132,6 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
     if (adjusted_size >= min_size) {
       if (try_allocate(obj /*value*/, adjusted_size, obj /*reference*/)) {
         actual_size = adjusted_size;
-        adjust_alloc_metadata(req, adjusted_size);
         ready_for_replenish = free_words - adjusted_size < ShenandoahHeap::plab_min_size();
         return obj;
       }
@@ -164,20 +163,29 @@ bool ShenandoahHeapRegion::try_allocate(HeapWord* const obj, size_t const size, 
 }
 
 inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t size) {
-  // Only need to update alloc metadata for lab alloc, shared alloc is counted implicitly by tlab/gclab allocs
+  // Plain (heap-locked) allocation path. Only need to update alloc metadata for lab alloc, shared
+  // alloc is counted implicitly by used() minus these three (see get_shared_allocs()).
+  shenandoah_assert_heaplocked_or_safepoint();
   switch (req.type()) {
     case ShenandoahAllocRequest::_alloc_tlab:
-      _tlab_allocs.add_then_fetch(size, memory_order_relaxed);
+      _tlab_allocs += size;
       break;
     case ShenandoahAllocRequest::_alloc_gclab:
-      _gclab_allocs.add_then_fetch(size, memory_order_relaxed);
+      _gclab_allocs += size;
       break;
     case ShenandoahAllocRequest::_alloc_plab:
-      _plab_allocs.add_then_fetch(size, memory_order_relaxed);
+      _plab_allocs += size;
       break;
     default:
       assert(!req.is_lab_alloc(), "Unrecognized LAB allocation type");
       break;
+  }
+}
+
+inline void ShenandoahHeapRegion::adjust_alloc_metadata_atomic(const ShenandoahAllocRequest &req, size_t size) {
+  assert(!req.is_lab_alloc(), "Must not be lab alloc");
+  if (UseTLAB) {
+    _shared_atomic_allocs.add_then_fetch(size, memory_order_relaxed);
   }
 }
 

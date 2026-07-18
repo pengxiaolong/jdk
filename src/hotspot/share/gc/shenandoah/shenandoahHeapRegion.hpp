@@ -28,12 +28,14 @@
 
 #include "gc/shared/gc_globals.hpp"
 #include "gc/shared/spaceDecorator.hpp"
+#include "gc/shared/tlab_globals.hpp"
 #include "gc/shenandoah/shenandoahAffiliation.hpp"
 #include "gc/shenandoah/shenandoahAgeCensus.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahAsserts.hpp"
 #include "gc/shenandoah/shenandoahHeap.hpp"
 #include "gc/shenandoah/shenandoahPadding.hpp"
+#include "logging/log.hpp"
 #include "runtime/atomic.hpp"
 #include "utilities/sizes.hpp"
 
@@ -260,9 +262,20 @@ private:
   shenandoah_padding(0);
   Atomic<HeapWord*> _atomic_top; // for atomic alloc functions, always set to nullptr if a region is not an active alloc region.
   shenandoah_padding(1);
-  Atomic<size_t> _tlab_allocs;
-  Atomic<size_t> _gclab_allocs;
-  Atomic<size_t> _plab_allocs;
+
+  size_t _tlab_allocs;
+  size_t _gclab_allocs;
+  size_t _plab_allocs;
+
+  // Running total (words) of shared (non-LAB) allocations made via the lock-free CAS path during
+  // the region's CURRENT activation as an alloc region. Bumped without the heap lock by
+  // try_allocate()'s caller, so this is the one alloc-metadata field that must remain atomic.
+  // At retirement (unset_active_alloc_region()'s caller), the total growth of this activation
+  // (tracked via _atomic_top) minus this value is the activation's LAB bytes, folded into
+  // whichever of _tlab_allocs/_gclab_allocs/_plab_allocs matches the activation's role (derived
+  // from affiliation() and is_gc_alloc_region(), read before either is cleared by retirement).
+  // This counter is then reset to 0 to start the next activation's epoch.
+  Atomic<size_t> _shared_atomic_allocs;
 
   Atomic<size_t> _live_data;
   Atomic<size_t> _critical_pins;
@@ -572,6 +585,7 @@ public:
   }
 
   inline void adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t);
+  inline void adjust_alloc_metadata_atomic(const ShenandoahAllocRequest &req, size_t);
   void reset_alloc_metadata();
   size_t get_shared_allocs() const;
   size_t get_tlab_allocs() const;
@@ -660,6 +674,25 @@ public:
         if (current_atomic_top > top_before_sync) {
           // reset age if there was any allocation in the region after it's reserved as alloc region.
           reset_age();
+          if (UseTLAB) {
+            // Fold this activation's growth into the lifetime lab/shared totals. shared_words is this
+            // activation's running total of shared (non-LAB) CAS allocations; the remainder of the
+            // growth is LAB words, attributed by role (Mutator/Collector/OldCollector), determined
+            // from affiliation() and is_gc_alloc_region() while both are still valid (this runs
+            // before either is cleared).
+            const size_t growth_words = pointer_delta(current_atomic_top, top_before_sync);
+            const size_t shared_words = _shared_atomic_allocs.exchange(0);
+            size_t* lab_allocs = is_young() ? (is_gc_alloc_region() ? &_gclab_allocs : &_tlab_allocs)
+                                  : &_plab_allocs;
+            const size_t lab_words = growth_words > shared_words ? growth_words - shared_words : 0;
+            *lab_allocs += lab_words;
+            if (shared_words > growth_words) {
+              log_debug(gc, free)("Region %zu: shared_atomic_allocs (%zu words) exceeded this "
+                                  "activation's growth (%zu words) at retirement; a concurrent "
+                                  "lock-free bump likely raced this fold (see unset_active_alloc_region)",
+                                  index(), shared_words, growth_words);
+            }
+          }
         }
         assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
         assert(!is_atomic_alloc_region(), "Must not");
