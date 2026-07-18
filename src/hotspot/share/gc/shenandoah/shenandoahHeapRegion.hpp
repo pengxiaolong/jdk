@@ -411,7 +411,7 @@ public:
   inline size_t garbage_before_padded_for_promote() const;
 
   HeapWord* get_top_at_evac_start() const { return _top_at_evac_start; }
-  void record_top_at_evac_start()         { _top_at_evac_start = _top; }
+  void record_top_at_evac_start()         { _top_at_evac_start = top(); }
 
   // Allocation (return nullptr if full)
   inline HeapWord* allocate(size_t word_size, const ShenandoahAllocRequest& req);
