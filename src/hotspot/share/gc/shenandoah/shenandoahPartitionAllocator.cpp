@@ -104,7 +104,7 @@ void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint 
   bool unset = occupant->unset_active_alloc_region();
   assert(unset, "Should always succeed");
   if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-    occupant->set_update_watermark(occupant->stable_top());
+    occupant->set_update_watermark(occupant->plain_top());
     occupant->set_gc_alloc_region(false);
   }
 }
@@ -143,7 +143,7 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
     bool unset = occupant->unset_active_alloc_region();
     assert(unset, "Should always succeed");
     if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-      occupant->set_update_watermark(occupant->stable_top());
+      occupant->set_update_watermark(occupant->plain_top());
       occupant->set_gc_alloc_region(false);
     }
   }
@@ -300,7 +300,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     // For GC allocations, we advance update_watermark because the objects relocated into this memory during
     // evacuation are not updated during evacuation. For both young and old regions, it is essential that all
     // PLABs be made parsable at the end of evacuation. This is enabled by retiring all plabs at end of evacuation.
-    r->set_update_watermark(r->top());
+    r->set_update_watermark(r->plain_top());
     _free_set->increase_partition_used(PARTITION, (req.actual_size() + req.waste()) * HeapWordSize);
   }
 

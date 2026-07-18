@@ -519,9 +519,18 @@ public:
   // region the returned value may advance concurrently; outside it is stable.
   // Prefer this form unless you specifically need to assert that no
   // concurrent allocation can be happening.
+  //
+  // Memory ordering: the acquire is needed ONLY on _atomic_top. _top is never
+  // written with a release store; it is published by the release transitions
+  // of _atomic_top (set_active_alloc_region's release_store and
+  // unset_active_alloc_region's release CAS, which stores _top BEFORE the CAS).
+  // A reader whose acquire load of _atomic_top observes nullptr has
+  // synchronized with whichever release transition wrote that null, and
+  // therefore observes the preceding plain store to _top. An acquire on _top
+  // itself would pair with nothing and is pure overhead.
   HeapWord* top() const {
     HeapWord* at = atomic_top();
-    return at == nullptr ? AtomicAccess::load_acquire(&_top) : at;
+    return at == nullptr ? AtomicAccess::load(&_top) : at;
   }
 
   // Relaxed counterpart of top(), for best-effort size readers that only use the result
@@ -535,17 +544,21 @@ public:
     return at == nullptr ? AtomicAccess::load(&_top) : at;
   }
 
-  // Stable top. Asserts the region is NOT an active CAS alloc region, so
+  // Plain read of _top. Asserts the region is NOT an active CAS alloc region, so
   // reading _top directly is guaranteed to observe the authoritative top.
   // Use for callers that establish this invariant by construction, e.g.,
   //   - while holding the heap lock outside of the active allocator paths,
   //   - at a safepoint after release_alloc_regions(),
   //   - on regions that never enter the active state (cset, trash,
   //     humongous, newly-created, in-construction).
-  HeapWord* stable_top() const {
+  // No ordering needed: callers guarantee the region is not an active alloc
+  // region, so _top is stable here; and _top is never written with a release
+  // store anyway (see top() for the publication protocol), so an acquire
+  // would pair with nothing.
+  HeapWord* plain_top() const {
     assert(!is_atomic_alloc_region(),
            "Region is active for CAS alloc; use top() for a concurrent snapshot");
-    return AtomicAccess::load_acquire(&_top);
+    return AtomicAccess::load(&_top);
   }
 
   void set_top(HeapWord* v) {
@@ -635,7 +648,7 @@ public:
     shenandoah_assert_heaplocked();
     assert(atomic_top() == nullptr, "Must be");
     // Sync _top to _atomic_top to set the region as an active atomic alloc region
-    _atomic_top.release_store(stable_top());
+    _atomic_top.release_store(plain_top());
   }
 
   // Unset a heap region as active alloc region. Called by ShenandoahPartitionAllocator when the

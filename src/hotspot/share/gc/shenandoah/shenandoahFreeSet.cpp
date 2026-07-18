@@ -1708,7 +1708,7 @@ void ShenandoahFreeSet::add_promoted_in_place_region_to_old_collector(Shenandoah
   } else {
     if (available_in_region >= ShenandoahHeap::min_fill_size() * HeapWordSize) {
       size_t fill_words = available_in_region / HeapWordSize;
-      ShenandoahHeap::heap()->old_generation()->card_scan()->register_object(region->top());
+      ShenandoahHeap::heap()->old_generation()->card_scan()->register_object(region->plain_top());
       region->allocate_fill(fill_words);
     }
     available_in_region = 0;

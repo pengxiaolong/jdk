@@ -356,8 +356,8 @@ ShenandoahScanRemembered::process_region_slice(ShenandoahHeapRegion *region, siz
     // collection.  Here, we need to scan up to TAMS for most recently initiated young-gen collection.
     // Since all LABs are retired at init mark, and since replacement LABs are allocated lazily, and since no
     // promotions occur until evacuation phase, TAMS for most recent young-gen is same as top().
-    if (end_of_range > region->top()) {
-      end_of_range = region->top();
+    if (end_of_range > region->top_relaxed()) {
+      end_of_range = region->top_relaxed();
     }
   }
 

@@ -556,7 +556,7 @@ public:
 
     // Record current region occupancy: this communicates empty regions are free
     // to the rest of Full GC code.
-    r->set_new_top(r->top());
+    r->set_new_top(r->plain_top());
   }
 };
 
@@ -978,7 +978,7 @@ public:
       // else, generational mode compaction has already established affiliation.
       r->make_regular_bypass();
       if (ZapUnusedHeapArea) {
-        SpaceMangler::mangle_region(MemRegion(r->top(), r->end()));
+        SpaceMangler::mangle_region(MemRegion(r->plain_top(), r->end()));
       }
     }
 

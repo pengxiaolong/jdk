@@ -40,7 +40,7 @@ HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
   assert(size >= ShenandoahHeap::min_fill_size(), "Cannot fill unless min fill size");
 
-  HeapWord* obj = stable_top();
+  HeapWord* obj = plain_top();
   HeapWord* new_top = obj + size;
   ShenandoahHeap::fill_with_object(obj, size);
   set_top(new_top);
@@ -57,7 +57,7 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocReque
   assert(!is_atomic_alloc_region(), "Must not");
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
-  HeapWord* obj = stable_top();
+  HeapWord* obj = plain_top();
   if (pointer_delta(end(), obj) >= size) {
     make_regular_allocation(req.affiliation());
     adjust_alloc_metadata(req, size);
@@ -329,7 +329,7 @@ inline bool ShenandoahHeapRegion::unset_active_alloc_region() {
           }
         }
       }
-      assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
+      assert(plain_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
       assert(!is_atomic_alloc_region(), "Must not");
       break;
     }
@@ -340,7 +340,7 @@ inline bool ShenandoahHeapRegion::unset_active_alloc_region() {
 inline void ShenandoahHeapRegion::save_top_before_promote() {
   assert(!is_atomic_alloc_region(), "Must not");
   assert(atomic_top() == nullptr, "Must be");
-  _top_before_promoted = stable_top();
+  _top_before_promoted = plain_top();
 }
 
 inline void ShenandoahHeapRegion::restore_top_before_promote() {
