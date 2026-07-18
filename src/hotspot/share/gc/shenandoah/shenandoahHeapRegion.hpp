@@ -28,14 +28,12 @@
 
 #include "gc/shared/gc_globals.hpp"
 #include "gc/shared/spaceDecorator.hpp"
-#include "gc/shared/tlab_globals.hpp"
 #include "gc/shenandoah/shenandoahAffiliation.hpp"
 #include "gc/shenandoah/shenandoahAgeCensus.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahAsserts.hpp"
 #include "gc/shenandoah/shenandoahHeap.hpp"
 #include "gc/shenandoah/shenandoahPadding.hpp"
-#include "logging/log.hpp"
 #include "runtime/atomic.hpp"
 #include "utilities/sizes.hpp"
 
@@ -644,63 +642,12 @@ public:
   // region is removed from its _alloc_regions slot: try_install_alloc_region (when undoing an
   // install that lost the publish CAS), try_atomic_allocate_in (lock-free retire of a filled
   // region), and release_alloc_region (release at a GC phase boundary).
-  inline bool unset_active_alloc_region() {
-    // Retire the region from CAS allocation by resetting _atomic_top to
-    // nullptr, and sync the current _atomic_top back to _top so that readers
-    // going through top() (which falls back to _top when atomic_top() is
-    // nullptr) continue to see the correct high-water mark.
-    //
-    // Store order matters here: _top must be updated BEFORE the CAS that
-    // resets _atomic_top. Any reader that observes atomic_top() == nullptr
-    // has, by the acquire load in atomic_top(), also observed the release CAS
-    // below, and therefore the preceding release_store to _top. Storing _top
-    // after the CAS would open a window in which a reader sees
-    // atomic_top() == nullptr with a stale _top and concludes, incorrectly,
-    // that a just-allocated object lies past top().
-    //
-    // The CAS may fail if a concurrent allocator bumped _atomic_top. On
-    // retry, current_atomic_top only grows, so re-storing it to _top is
-    // monotonic.
-    shenandoah_assert_heaplocked();
-    HeapWord* const top_before_sync = AtomicAccess::load(&_top);
-    HeapWord* prior_atomic_top = nullptr;
-    HeapWord* current_atomic_top = nullptr;
-    bool success = false;
-    while ((current_atomic_top = atomic_top()) != nullptr) {
-      AtomicAccess::store(&_top, current_atomic_top);
-      prior_atomic_top = _atomic_top.compare_exchange(current_atomic_top, (HeapWord*) nullptr, memory_order_release);
-      if (prior_atomic_top == current_atomic_top) {
-        success = true;
-        if (current_atomic_top > top_before_sync) {
-          // reset age if there was any allocation in the region after it's reserved as alloc region.
-          reset_age();
-          if (UseTLAB) {
-            // Fold this activation's growth into the lifetime lab/shared totals. shared_words is this
-            // activation's running total of shared (non-LAB) CAS allocations; the remainder of the
-            // growth is LAB words, attributed by role (Mutator/Collector/OldCollector), determined
-            // from affiliation() and is_gc_alloc_region() while both are still valid (this runs
-            // before either is cleared).
-            const size_t growth_words = pointer_delta(current_atomic_top, top_before_sync);
-            const size_t shared_words = _shared_atomic_allocs.exchange(0);
-            size_t* lab_allocs = is_young() ? (is_gc_alloc_region() ? &_gclab_allocs : &_tlab_allocs)
-                                  : &_plab_allocs;
-            const size_t lab_words = growth_words > shared_words ? growth_words - shared_words : 0;
-            *lab_allocs += lab_words;
-            if (shared_words > growth_words) {
-              log_debug(gc, free)("Region %zu: shared_atomic_allocs (%zu words) exceeded this "
-                                  "activation's growth (%zu words) at retirement; a concurrent "
-                                  "lock-free bump likely raced this fold (see unset_active_alloc_region)",
-                                  index(), shared_words, growth_words);
-            }
-          }
-        }
-        assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
-        assert(!is_atomic_alloc_region(), "Must not");
-        break;
-      }
-    }
-    return success;
-  }
+  //
+  // Defined in shenandoahHeapRegion.inline.hpp, not here: it calls is_young(), which (like
+  // affiliation()) depends on ShenandoahHeap and can only be defined there without a circular
+  // include (see the "Circular-dependency resilient inline headers" pattern used throughout
+  // this class).
+  inline bool unset_active_alloc_region();
 
   bool is_atomic_alloc_region() const {
     // region is an active atomic alloc region if the atomic top is set

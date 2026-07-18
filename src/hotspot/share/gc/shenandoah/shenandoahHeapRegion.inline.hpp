@@ -29,9 +29,11 @@
 
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 
+#include "gc/shared/tlab_globals.hpp"
 #include "gc/shenandoah/shenandoahGenerationalHeap.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc/shenandoah/shenandoahOldGeneration.hpp"
+#include "logging/log.hpp"
 
 HeapWord* ShenandoahHeapRegion::allocate_fill(size_t size) {
   shenandoah_assert_heaplocked_or_safepoint();
@@ -291,6 +293,48 @@ inline bool ShenandoahHeapRegion::is_old() const {
 
 inline bool ShenandoahHeapRegion::is_affiliated() const {
   return affiliation() != FREE;
+}
+
+inline bool ShenandoahHeapRegion::unset_active_alloc_region() {
+  shenandoah_assert_heaplocked();
+  HeapWord* const top_before_sync = AtomicAccess::load(&_top);
+  HeapWord* prior_atomic_top = nullptr;
+  HeapWord* current_atomic_top = nullptr;
+  bool success = false;
+  while ((current_atomic_top = atomic_top()) != nullptr) {
+    AtomicAccess::store(&_top, current_atomic_top);
+    prior_atomic_top = _atomic_top.compare_exchange(current_atomic_top, (HeapWord*) nullptr, memory_order_release);
+    if (prior_atomic_top == current_atomic_top) {
+      success = true;
+      if (current_atomic_top > top_before_sync) {
+        // reset age if there was any allocation in the region after it's reserved as alloc region.
+        reset_age();
+        if (UseTLAB) {
+          // Fold this activation's growth into the lifetime lab/shared totals. shared_words is this
+          // activation's running total of shared (non-LAB) CAS allocations; the remainder of the
+          // growth is LAB words, attributed by role (Mutator/Collector/OldCollector), determined
+          // from affiliation() and is_gc_alloc_region() while both are still valid (this runs
+          // before either is cleared).
+          const size_t growth_words = pointer_delta(current_atomic_top, top_before_sync);
+          const size_t shared_words = _shared_atomic_allocs.exchange(0);
+          size_t* lab_allocs = is_young() ? (is_gc_alloc_region() ? &_gclab_allocs : &_tlab_allocs)
+                                : &_plab_allocs;
+          const size_t lab_words = growth_words > shared_words ? growth_words - shared_words : 0;
+          *lab_allocs += lab_words;
+          if (shared_words > growth_words) {
+            log_debug(gc, free)("Region %zu: shared_atomic_allocs (%zu words) exceeded this "
+                                "activation's growth (%zu words) at retirement; a concurrent "
+                                "lock-free bump likely raced this fold (see unset_active_alloc_region)",
+                                index(), shared_words, growth_words);
+          }
+        }
+      }
+      assert(stable_top() == current_atomic_top, "Value of _atomic_top must have synced to _top");
+      assert(!is_atomic_alloc_region(), "Must not");
+      break;
+    }
+  }
+  return success;
 }
 
 inline void ShenandoahHeapRegion::save_top_before_promote() {
