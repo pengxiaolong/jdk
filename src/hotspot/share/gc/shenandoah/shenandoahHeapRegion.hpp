@@ -581,7 +581,7 @@ public:
 
   size_t capacity() const       { return byte_size(bottom(), end()); }
   // used()/free()/free_words() use top(), which is safe in any context.
-  // For stable snapshots, use the stable_* variants which assert the region
+  // For plain (unordered) snapshots, use plain_top(), which asserts the region
   // is not an active CAS alloc region.
   size_t used() const           { return byte_size(bottom(), top()); }
   size_t used_before_promote() const { return byte_size(bottom(), get_top_before_promote()); }
