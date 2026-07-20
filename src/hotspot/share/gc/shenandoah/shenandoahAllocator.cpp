@@ -29,6 +29,18 @@
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "runtime/os.hpp"
 
+// Round x to the closest power of 2 value.
+static uint round_power_of_2(const uint x) {
+  assert(x > 0, "Must be positive");
+  if (is_power_of_2(x)) {
+    return x;
+  }
+  const uint log2 = log2i(x);
+  const uint low = 1 << log2;
+  const uint high = low << 1;
+  return (x - low < high - x) ? low : high;
+}
+
 // Derive the number of CAS alloc-region stripe slots for the mutator allocator. Striping spreads
 // lock-free allocation contention, so it is bounded by the available parallelism (no benefit in
 // more slots than CPUs the process may run on). It is also bounded by heap size: each slot holds a
@@ -44,7 +56,7 @@ static uint mutator_alloc_regions() {
     return MIN2((uint) ShenandoahMutatorAllocRegions, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint cpu_bound = (uint) MAX2(os::initial_active_processor_count(), 1);
-  const uint heap_bound = (uint) round_up_power_of_2(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1));
+  const uint heap_bound = round_power_of_2(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1));
   return round_down_power_of_2(MIN3(cpu_bound, heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS));
 }
 
@@ -57,7 +69,7 @@ static uint collector_alloc_regions() {
     return MIN2((uint) ShenandoahCollectorAllocRegions, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint worker_bound = MAX2(ParallelGCThreads, 1u);
-  const uint heap_bound = (uint) round_up_power_of_2(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1));
+  const uint heap_bound = round_power_of_2(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1));
   return round_down_power_of_2(MIN3(worker_bound, heap_bound, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS));
 }
 
