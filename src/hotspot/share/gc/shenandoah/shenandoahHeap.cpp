@@ -954,7 +954,7 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
   if (req.is_mutator_alloc()) {
 
     if (!ShenandoahAllocFailureALot || !should_inject_alloc_failure()) {
-      result = allocate_memory_work(req, in_new_region);
+      result = allocate_memory_work<true>(req, in_new_region);
     }
 
     // Check that gc overhead is not exceeded.
@@ -986,7 +986,7 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
       const size_t original_count = shenandoah_policy()->full_gc_count();
       while (result == nullptr && should_retry_allocation(original_count)) {
         control_thread()->handle_alloc_failure(req, true);
-        result = allocate_memory_work(req, in_new_region);
+        result = allocate_memory_work<true>(req, in_new_region);
       }
       if (result != nullptr) {
         // If our allocation request has been satisfied after it initially failed, we count this as good gc progress
@@ -1002,7 +1002,7 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
     }
   } else {
     assert(req.is_gc_alloc(), "Can only accept GC allocs here");
-    result = allocate_memory_work(req, in_new_region);
+    result = allocate_memory_work<false>(req, in_new_region);
     // Do not call handle_alloc_failure() here, because we cannot block.
     // The allocation failure would be handled by the LRB slowpath with handle_alloc_failure_evac().
   }
@@ -1032,31 +1032,35 @@ inline bool ShenandoahHeap::should_retry_allocation(size_t original_full_gc_coun
       && !shenandoah_policy()->is_at_shutdown();
 }
 
+template<bool IS_MUTATOR>
 HeapWord* ShenandoahHeap::allocate_memory_work(ShenandoahAllocRequest& req, bool& in_new_region) {
+  assert(IS_MUTATOR == req.is_mutator_alloc(), "Sanity");
   // Reserve the promotion budget up front so it is enforced atomically without the heap lock.
   // If the reserve is exhausted, deny the promotion rather than overshoot it; the reservation
   // is refunded below if the allocation itself fails.
-  if (req.is_promotion() && !old_generation()->try_expend_promoted(req.size() << LogHeapWordSize)) {
+  if (!IS_MUTATOR && req.is_promotion() && !old_generation()->try_expend_promoted(req.size() << LogHeapWordSize)) {
     return nullptr;
   }
 
   HeapWord* result = _allocator->allocate(req, in_new_region);
 
-  if (result != nullptr) {
-    if (req.is_mutator_alloc()) {
+  if constexpr (IS_MUTATOR) {
+    if (result != nullptr) {
       _alloc_rate.allocated((req.actual_size() + req.waste()) * HeapWordSize);
     }
-
-    if (req.is_old()) {
-      if (req.is_lab_alloc()) {
-        old_generation()->configure_plab_for_current_thread(req);
-      } else if (req.is_promotion()) {
-        log_debug(gc, plab)("Expend shared promotion of %zu bytes", req.actual_size() * HeapWordSize);
+  } else {
+    if (result != nullptr) {
+      if (req.is_old()) {
+        if (req.is_lab_alloc()) {
+          old_generation()->configure_plab_for_current_thread(req);
+        } else if (req.is_promotion()) {
+          log_debug(gc, plab)("Expend shared promotion of %zu bytes", req.actual_size() * HeapWordSize);
+        }
       }
+    } else if (req.is_promotion()) {
+      // Allocation failed, so refund the promotion budget reserved above.
+      old_generation()->unexpend_promoted(req.size() << LogHeapWordSize);
     }
-  } else if (req.is_promotion()) {
-    // Allocation failed, so refund the promotion budget reserved above.
-    old_generation()->unexpend_promoted(req.size() << LogHeapWordSize);
   }
   return result;
 }
