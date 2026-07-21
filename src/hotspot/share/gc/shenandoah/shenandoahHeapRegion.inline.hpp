@@ -88,7 +88,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
 
   // The loop always returns from within its body.
   for (;;) {
-    size_t free_words = pointer_delta(end(), obj);
+    const size_t free_words = pointer_delta(end(), obj);
     if (free_words >= size) {
       if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
         adjust_alloc_metadata_atomic(req, size);
@@ -114,8 +114,6 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
 HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size, bool &ready_for_replenish) {
   assert(req.is_lab_alloc(), "Only lab alloc");
 
-  const size_t req_size = req.size();
-  const size_t min_size = req.min_size();
   // Relaxed read: the value is only the expected operand of try_allocate's release CAS, which
   // validates it. See atomic_top_relaxed().
   HeapWord* obj = atomic_top_relaxed();
@@ -125,13 +123,9 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
   }
   // The loop always returns from within its body.
   for (;;) {
-    size_t adjusted_size = req_size;
-    size_t free_words = pointer_delta(end(), obj);
-    size_t aligned_free_words = align_down(free_words, MinObjAlignment);
-    if (adjusted_size > aligned_free_words) {
-      adjusted_size = aligned_free_words;
-    }
-    if (adjusted_size >= min_size) {
+    const size_t free_words = pointer_delta(end(), obj);
+    const size_t adjusted_size = MIN2(req.size(), align_down(free_words, MinObjAlignment));
+    if (adjusted_size >= req.min_size()) {
       if (try_allocate(obj /*value*/, adjusted_size, obj /*reference*/)) {
         actual_size = adjusted_size;
         ready_for_replenish = free_words - adjusted_size < ShenandoahHeap::plab_min_size();
@@ -144,7 +138,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
       }
     } else {
       log_trace(gc, free)("Failed to shrink TLAB or GCLAB request (%zu) in region %zu to %zu"
-                          " because min_size() is %zu", req_size, index(), adjusted_size, min_size);
+                          " because min_size() is %zu", req.size(), index(), adjusted_size, req.min_size());
       // Region cannot satisfy even the minimum LAB. Mark for replenish only when it has no room for
       // any minimum LAB (truly full); free_words is the region's actual remaining capacity here.
       ready_for_replenish = free_words < ShenandoahHeap::plab_min_size();
