@@ -91,12 +91,13 @@ private:
   // Allocate within a single region; the caller must guarantee the region has enough free
   // capacity for the request. Handles LAB sizing, updates partition accounting via
   // ShenandoahFreeSet, and retires the region if remaining capacity drops below PLAB::min_size().
-  // boundary_changed is set to true if the region is retired or otherwise mutates the partition
-  // boundary; it is never reset to false.
-  HeapWord* allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& boundary_changed);
+  // retired_after_alloc is set to true if the region is retired.
+  HeapWord* allocate_in(ShenandoahHeapRegion* r,
+                        ShenandoahAllocRequest& req,
+                        bool& retired_after_alloc);
 
   // Try the lock-free CAS allocation in slot `index`'s region r; retires the slot if it fills.
-  HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool &ready_for_replenish);
+  HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req);
 
   // Retire (deactivate + reconcile) the region in stripe slot; heap lock held.
   void release_alloc_region(uint slot);
