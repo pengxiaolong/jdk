@@ -71,6 +71,12 @@ public:
   // Proactively fill empty mutator CAS allocation-region slots. Caller must hold the heap lock.
   void reserve_mutator_alloc_regions_under_lock();
 
+  // Return the free bytes in the calling thread's mutator alloc region, or max_tlab_size if the
+  // region is empty or too small. Used by unsafe_max_tlab_alloc() for TLAB sizing hints.
+  size_t unsafe_max_tlab_alloc(Thread* thread) {
+    return _mutator_allocator.unsafe_max_tlab_alloc(thread);
+  }
+
   // Read-time accounting correction term for the given partition's cached alloc region: the
   // bytes that were pre-charged to the partition's used at reserve time but are not yet
   // actually consumed (the region's current free()). Returns 0 if no region is cached.

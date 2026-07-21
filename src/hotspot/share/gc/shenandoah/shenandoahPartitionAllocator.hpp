@@ -116,6 +116,22 @@ public:
   // use the lock-free allocation path instead of contending for the heap lock.
   void reserve_alloc_regions();
 
+  // Return the remaining free bytes in this thread's stripe alloc region, or max_tlab_size if the
+  // region is empty/absent or too small for a TLAB. Used by unsafe_max_tlab_alloc() to hint TLAB
+  // sizing: if the current region can still fit a TLAB, report its free space (capped at max_tlab)
+  // so the TLAB machinery doesn't request an oversized refill that would waste the region tail.
+  size_t unsafe_max_tlab_alloc(Thread* thread) {
+    uint slot = alloc_region_slot(thread);
+    ShenandoahHeapRegion* r = _alloc_regions[slot].load_relaxed();
+    if (r != nullptr) {
+      size_t free_bytes = r->free_relaxed();
+      if (free_bytes >= MinTLABSize) {
+        return MIN2(free_bytes, ShenandoahHeapRegion::max_tlab_size_bytes());
+      }
+    }
+    return ShenandoahHeapRegion::max_tlab_size_bytes();
+  }
+
   // Total remaining bytes of all the alloc regions held by the allocator.
   // This is a best-effort estimate consumed by saturating-subtraction accounting readers, so it uses
   // fully relaxed reads on the hottest scan path: load_relaxed for the slot pointer and free_relaxed()

@@ -24,6 +24,7 @@
  */
 
 #include "gc/shenandoah/shenandoahAgeCensus.hpp"
+#include "gc/shenandoah/shenandoahAllocator.hpp"
 #include "gc/shenandoah/shenandoahClosures.inline.hpp"
 #include "gc/shenandoah/shenandoahCollectorPolicy.hpp"
 #include "gc/shenandoah/shenandoahForwarding.inline.hpp"
@@ -67,7 +68,7 @@ protected:
 
 // Returns size in bytes
 size_t ShenandoahGenerationalHeap::unsafe_max_tlab_alloc() const {
-  return ShenandoahHeapRegion::max_tlab_size_bytes();
+  return allocator()->unsafe_max_tlab_alloc(Thread::current());
 }
 
 ShenandoahGenerationalHeap::ShenandoahGenerationalHeap(ShenandoahCollectorPolicy* policy) :
