@@ -63,8 +63,9 @@ private:
   uint const _alloc_region_slot_mask;
 
   // Stripe array of cached alloc regions. Each slot holds a region with remaining capacity that is
-  // bump-allocated lock-free via CAS, or nullptr when the slot is empty. A slot is cleared when its
-  // region is retired (by try_atomic_allocate_in when it fills, or by release_alloc_region).
+  // bump-allocated lock-free via CAS, or nullptr when the slot is empty. A slot is cleared under the
+  // heap lock after an allocation attempt observes too little remaining capacity, or explicitly by
+  // release_alloc_region.
   Atomic<ShenandoahHeapRegion*> _alloc_regions[MAX_ALLOC_REGIONS];
 
   // Return this thread's stripe slot, assigning a stable per-thread slot on first use so different
@@ -96,7 +97,8 @@ private:
                         ShenandoahAllocRequest& req,
                         bool& retired_after_alloc);
 
-  // Try the lock-free CAS allocation in slot `index`'s region r; retires the slot if it fills.
+  // Try a lock-free CAS allocation in region r. This helper only performs the bump; retirement is
+  // handled separately from a post-attempt free-space snapshot after the heap lock is acquired.
   HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req);
 
   // Retire (deactivate + reconcile) the region in stripe slot; heap lock held.

@@ -81,7 +81,8 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
     ShenandoahHeapRegion* r = HEAP_LOCKED ? _alloc_regions[i].load_relaxed() : _alloc_regions[i].load_acquire();
     if (r != nullptr) {
       HeapWord* obj = try_atomic_allocate_in(r, req);
-      if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
+      if (HEAP_LOCKED &&
+          (r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
         uninstall_alloc_region(i, r);
       }
       if (obj != nullptr) {
@@ -156,7 +157,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   uint const slot = alloc_region_slot(thread);
 
   // Fast path: lock-free CAS allocation in THIS thread's stripe slot.
-  ShenandoahHeapRegion* shared_region = _alloc_regions[slot].load_relaxed();
+  ShenandoahHeapRegion* shared_region = _alloc_regions[slot].load_acquire();
   if (shared_region != nullptr) {
     HeapWord* obj = try_atomic_allocate_in(shared_region, req);
     if (obj != nullptr) {
@@ -169,10 +170,13 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   {
     ShenandoahHeap* const heap = ShenandoahHeap::heap();
     ShenandoahHeapLocker locker(heap->lock(), req.is_mutator_alloc());
-    // Reexamine current slot under heap lock
+    // Reload because another slow path may have changed the slot while this thread waited for the
+    // heap lock. An unchanged region will fail quickly because its free space can only decrease.
     shared_region = _alloc_regions[slot].load_relaxed();
     if (shared_region != nullptr) {
       HeapWord* obj = try_atomic_allocate_in(shared_region, req);
+      // Check after the retry so retirement reflects CAS allocations that raced the original fast
+      // path probe. A relaxed snapshot can only overestimate free space and delay retirement.
       if (shared_region->free_relaxed() >> LogHeapWordSize < ShenandoahHeap::plab_min_size()) {
         uninstall_alloc_region(slot, shared_region);
         shared_region = nullptr;
