@@ -81,7 +81,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
     ShenandoahHeapRegion* r = HEAP_LOCKED ? _alloc_regions[i].load_relaxed() : _alloc_regions[i].load_acquire();
     if (r != nullptr) {
       HeapWord* obj = try_atomic_allocate_in(r, req);
-      if (r->free() >> LogHeapWordSize < ShenandoahHeap::plab_min_size()) {
+      if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
         uninstall_alloc_region(i, r);
       }
       if (obj != nullptr) {
@@ -117,7 +117,7 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
 
   // Replace the slot only when new_region is the better region to cache, i.e. it has strictly more
   // remaining capacity than the occupant (an empty slot always installs).
-  if (occupant != nullptr && occupant->free() >> LogHeapWordSize >= ShenandoahHeap::plab_min_size()) {
+  if (occupant != nullptr && (occupant->free_relaxed() >> LogHeapWordSize) >= ShenandoahHeap::plab_min_size()) {
     return false;
   }
 
@@ -215,21 +215,19 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     }
 
     if (fresh != nullptr) {
-      bool boundary_changed = false;
       bool retired_after_alloc = false;
       HeapWord* result = allocate_in(fresh, req, retired_after_alloc);
       assert(result != nullptr, "Sanity check - allocate_in should always succeed");
       if (in_new_region) {
         _free_set->mark_region_used(PARTITION);
       }
+
+      bool boundary_changed = in_new_region || retired_after_alloc;
       // If the region still has usable capacity, try to install it into our stripe slot as an active
       // alloc region so subsequent allocations use the lock-free fast path.
-      if (!retired_after_alloc) {
-        if (try_install_alloc_region(slot, shared_region, fresh)) {
-          boundary_changed = true;
-        }
+      if (!retired_after_alloc && try_install_alloc_region(slot, shared_region, fresh)) {
+        boundary_changed = true;
       }
-      boundary_changed = boundary_changed || in_new_region || retired_after_alloc;
       _free_set->notify_allocation(PARTITION, in_new_region, boundary_changed);
       return result;
     }
@@ -260,7 +258,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
   // Perform the actual allocation: LABs may be shrunk to fit.
   if (req.is_lab_alloc()) {
     size_t adjusted_size = req.size();
-    size_t free = align_down(r->free() >> LogHeapWordSize, MinObjAlignment);
+    size_t free = align_down((r->free_relaxed() >> LogHeapWordSize), MinObjAlignment);
     if (adjusted_size > free) {
       adjusted_size = free;
     }
@@ -275,7 +273,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     req.set_actual_size(size);
   }
   assert(result != nullptr, "Allocation must succeed, region free: %zu, request minimal size: %zu",
-    r->free(), req.is_lab_alloc() ? req.min_size() : req.size());
+    r->free_relaxed(), req.is_lab_alloc() ? req.min_size() : req.size());
 
   // Update partition used bytes after allocation
   if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
@@ -291,7 +289,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
   }
 
   // Retire the region if remaining capacity is too small for any future PLAB.
-  if ((r->free() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
+  if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
     size_t idx = r->index();
     size_t waste_bytes = _free_set->retire_region(PARTITION, idx, r->used());
     if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
@@ -370,7 +368,7 @@ void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint slot) {
   }
 
   uninstall_alloc_region(slot, alloc_region);
-  if (alloc_region->free() >> LogHeapWordSize >= ShenandoahHeap::plab_min_size()) {
+  if ((alloc_region->free_relaxed() >> LogHeapWordSize) >= ShenandoahHeap::plab_min_size()) {
     // Region is still allocatable: return its unconsumed remnant to the partition and
     // make it a free-set member again.
     _free_set->unretire_alloc_region(PARTITION, alloc_region);
