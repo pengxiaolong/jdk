@@ -56,7 +56,7 @@ static uint32_t mutator_alloc_regions() {
     return MIN2(checked_cast<uint32_t>(ShenandoahMutatorAllocRegions), ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint32_t cpu_bound = checked_cast<uint32_t>(MAX2(os::initial_active_processor_count(), 1));
-  const uint32_t heap_bound = checked_cast<uint32_t>(round_power_of_2(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1)));
+  const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1)));
   return round_down_power_of_2(MIN3(cpu_bound, heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS));
 }
 
@@ -69,7 +69,7 @@ static uint32_t collector_alloc_regions() {
     return MIN2(checked_cast<uint32_t>(ShenandoahCollectorAllocRegions), ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint32_t worker_bound = MAX2(checked_cast<uint32_t>(ParallelGCThreads), 1u);
-  const uint32_t heap_bound = checked_cast<uint32_t>(round_power_of_2(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1)));
+  const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1)));
   return round_down_power_of_2(MIN3(worker_bound, heap_bound, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS));
 }
 
