@@ -149,6 +149,16 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
   return true;
 }
 
+ class ShenandoahHeapLockReleaser : public StackObj {
+public:
+  ShenandoahHeapLockReleaser() {
+    assert(ShenandoahHeap::heap()->lock()->owned_by_self(), "Must own");
+  }
+  ~ShenandoahHeapLockReleaser() {
+    ShenandoahHeap::heap()->lock()->unlock();
+  }
+};
+
 template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
   // Resolve the current thread once and pass it to alloc_region_slot() instead of having that
@@ -166,10 +176,23 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     }
   }
 
-  // Slow-path: allocate under heap lock
+  // Slow-path: contended or slot ran out of memory
   {
     ShenandoahHeap* const heap = ShenandoahHeap::heap();
-    ShenandoahHeapLocker locker(heap->lock(), req.is_mutator_alloc());
+     bool locked = false;
+    // Probe siblings lock-free instead of waiting behind the lock holder.
+    if (_alloc_region_count > 1 && !((locked = heap->lock()->try_lock()))) {
+      HeapWord* obj = try_allocate_in_alloc_regions<false>(req, in_new_region, slot + 1, _alloc_region_count - 1);
+      if (obj != nullptr) {
+        return obj;
+      }
+    }
+
+    if (!locked) {
+      heap->lock()->lock(req.is_mutator_alloc());
+    }
+    // Now we own the lock, release it at end of current block execution
+    ShenandoahHeapLockReleaser heap_lock_releaser;
     // Reload because another slow path may have changed the slot while this thread waited for the
     // heap lock. An unchanged region will fail quickly because its free space can only decrease.
     shared_region = _alloc_regions[slot].load_relaxed();

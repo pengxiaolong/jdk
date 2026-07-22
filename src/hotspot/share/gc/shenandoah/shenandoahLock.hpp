@@ -68,6 +68,21 @@ public:
     DEBUG_ONLY(_owner.store_relaxed(Thread::current());)
   }
 
+  // Single non-blocking CAS attempt to acquire the lock. Returns true if this call won it.
+  // TODO this will break ShenandoahReentrantLock if use ShenandoahLock as base lock class
+  bool try_lock() {
+    bool const acquired = _state.load_relaxed() == unlocked &&
+                          _state.compare_exchange(unlocked, locked) == unlocked;
+#ifdef ASSERT
+    if (acquired) {
+      assert(_state.load_relaxed() == locked, "must be locked");
+      assert(_owner.load_relaxed() == nullptr, "must not be owned");
+      DEBUG_ONLY(_owner.store_relaxed(Thread::current());)
+    }
+#endif
+    return acquired;
+  }
+
   void unlock() {
     assert(_owner.load_relaxed() == Thread::current(), "sanity");
     DEBUG_ONLY(_owner.store_relaxed((Thread*)nullptr);)
