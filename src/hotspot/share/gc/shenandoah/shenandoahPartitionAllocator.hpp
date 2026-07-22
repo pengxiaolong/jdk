@@ -47,7 +47,7 @@ class ShenandoahPartitionAllocator : public CHeapObj<mtGC> {
   friend class VMStructs;
 
 public:
-  static constexpr uint MAX_ALLOC_REGIONS = 128;
+  static constexpr uint32_t MAX_ALLOC_REGIONS = 128;
 
 private:
   ShenandoahFreeSet* const _free_set;
@@ -55,13 +55,13 @@ private:
   // Clamp to [1, MAX_ALLOC_REGIONS] and round down to a power of 2, so _alloc_region_count is
   // always safe to use as a bitmask size regardless of what the caller (or an ergonomic
   // derivation with a non-power-of-2 input, e.g. ParallelGCThreads) passed in.
-  static uint clamped_alloc_region_count(uint alloc_region_count) {
+  static uint32_t clamped_alloc_region_count(uint32_t alloc_region_count) {
     return round_down_power_of_2(MIN2(MAX2(alloc_region_count, 1u), MAX_ALLOC_REGIONS));
   }
 
   // Number of alloc-region stripe slots in use for this partition, a power of two.
-  uint const _alloc_region_count;
-  uint const _alloc_region_slot_mask;
+  uint32_t const _alloc_region_count;
+  uint32_t const _alloc_region_slot_mask;
 
   // Stripe array of cached alloc regions. Each slot holds a region with remaining capacity that is
   // bump-allocated lock-free via CAS, or nullptr when the slot is empty. A slot is cleared under the
@@ -72,7 +72,7 @@ private:
   // Return this thread's stripe slot, assigning a stable per-thread slot on first use so different
   // threads map to different alloc regions. `thread` is the already-resolved current thread, passed
   // in to avoid a repeated Thread::current() on the allocation fast path.
-  uint alloc_region_slot(Thread* thread);
+  uint32_t alloc_region_slot(Thread* thread);
 
   // Under-lock scan of `count` stripe slots starting at start_slot and wrapping around the slot
   // array, used when the free set has no region of its own to hand out: a sibling slot may still
@@ -81,14 +81,14 @@ private:
   // since). Collector partitions call this before stealing from the mutator; the mutator calls it as
   // a last resort. Returns the allocation, or nullptr if no slot in the range could satisfy it.
   template<bool HEAP_LOCKED>
-  HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint start_slot, uint count);
+  HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint32_t start_slot, uint32_t count);
 
   // Uninstall the occupant from the stripe slot.
-  void uninstall_alloc_region(uint slot, ShenandoahHeapRegion* occupant);
+  void uninstall_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant);
 
   // Try to install freshly-allocated new_region into stripe slot as the active alloc region(heap lock held).
   // Returns true if new_region became the slot's active alloc region.
-  bool try_install_alloc_region(uint slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
+  bool try_install_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
 
   // Allocate within a single region; the caller must guarantee the region has enough free
   // capacity for the request. Handles LAB sizing, updates partition accounting via
@@ -103,10 +103,10 @@ private:
   HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req);
 
   // Retire (deactivate + reconcile) the region in stripe slot; heap lock held.
-  void release_alloc_region(uint slot);
+  void release_alloc_region(uint32_t slot);
 
 public:
-  ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint alloc_region_count);
+  ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count);
 
   // Allocate from this partition. Returns nullptr if partition cannot satisfy the request.
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
@@ -125,7 +125,7 @@ public:
   // sizing: if the current region can still fit a TLAB, report its free space (capped at max_tlab)
   // so the TLAB machinery doesn't request an oversized refill that would waste the region tail.
   size_t unsafe_max_tlab_alloc(Thread* thread) {
-    uint slot = alloc_region_slot(thread);
+    uint32_t slot = alloc_region_slot(thread);
     ShenandoahHeapRegion* r = _alloc_regions[slot].load_relaxed();
     if (r != nullptr) {
       size_t free_bytes = r->free_relaxed();
@@ -143,7 +143,7 @@ public:
   size_t remnant_bytes() const {
     const size_t min_free_bytes = ShenandoahHeap::plab_min_size() * HeapWordSize;
     size_t total = 0;
-    for (uint i = 0; i < _alloc_region_count; i++) {
+    for (uint32_t i = 0; i < _alloc_region_count; i++) {
       ShenandoahHeapRegion* r = _alloc_regions[i].load_relaxed();
       if (r != nullptr) {
         size_t free_bytes = r->free_relaxed();

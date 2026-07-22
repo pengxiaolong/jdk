@@ -34,17 +34,17 @@
 #include "logging/log.hpp"
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint alloc_region_count)
+ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count)
   : _free_set(free_set),
     _alloc_region_count(clamped_alloc_region_count(alloc_region_count)),
     _alloc_region_slot_mask(_alloc_region_count - 1u) {
-  for (uint i = 0; i < MAX_ALLOC_REGIONS; i++) {
+  for (uint32_t i = 0; i < MAX_ALLOC_REGIONS; i++) {
     _alloc_regions[i].store_relaxed(nullptr);
   }
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-uint ShenandoahPartitionAllocator<PARTITION>::alloc_region_slot(Thread* thread) {
+uint32_t ShenandoahPartitionAllocator<PARTITION>::alloc_region_slot(Thread* thread) {
   if (_alloc_region_count <= 1u) {
     return 0u;
   }
@@ -54,14 +54,14 @@ uint ShenandoahPartitionAllocator<PARTITION>::alloc_region_slot(Thread* thread) 
     // has never been assigned a worker task.
     const uint worker_id = WorkerThread::worker_id();
     if (worker_id != UINT_MAX) {
-      return worker_id & _alloc_region_slot_mask;
+      return checked_cast<uint32_t>(worker_id) & _alloc_region_slot_mask;
     }
   }
 
   // Mutators and rare non-worker collector allocations share one stable raw per-thread ticket.
   // Reduce it here rather than caching a consumer-specific slot so other striped structures can
   // independently map the same ticket into differently-sized arrays.
-  const uint slot = ShenandoahThreadLocalData::round_robin_probe(thread) & _alloc_region_slot_mask;
+  const uint32_t slot = ShenandoahThreadLocalData::round_robin_probe(thread) & _alloc_region_slot_mask;
   assert(slot < _alloc_region_count, "slot in range");
   return slot;
 }
@@ -70,14 +70,14 @@ template<ShenandoahFreeSetPartitionId PARTITION>
 template<bool HEAP_LOCKED>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions(ShenandoahAllocRequest& req,
                                                                                  bool& in_new_region,
-                                                                                 const uint start_slot,
-                                                                                 const uint count) {
+                                                                                 const uint32_t start_slot,
+                                                                                 const uint32_t count) {
   assert(count < _alloc_region_count, "Must be");
   if (HEAP_LOCKED) {
     shenandoah_assert_heaplocked();
   }
-  uint i = start_slot & _alloc_region_slot_mask;
-  for (uint n = 0; n < count; n++) {
+  uint32_t i = start_slot & _alloc_region_slot_mask;
+  for (uint32_t n = 0; n < count; n++) {
     ShenandoahHeapRegion* r = HEAP_LOCKED ? _alloc_regions[i].load_relaxed() : _alloc_regions[i].load_acquire();
     if (r != nullptr) {
       HeapWord* obj = try_atomic_allocate_in(r, req);
@@ -96,7 +96,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint slot, ShenandoahHeapRegion* occupant) {
+void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint32_t slot, ShenandoahHeapRegion* occupant) {
   assert(occupant != nullptr && _alloc_regions[slot].load_relaxed() == occupant, "Must be sane");
   _alloc_regions[slot].release_store(nullptr);
 
@@ -109,7 +109,7 @@ void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint 
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uint slot,
+bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uint32_t slot,
                                                                        ShenandoahHeapRegion* occupant,
                                                                        ShenandoahHeapRegion* new_region) {
   shenandoah_assert_heaplocked();
@@ -164,7 +164,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   // Resolve the current thread once and pass it to alloc_region_slot() instead of having that
   // helper call Thread::current() again on the hot path.
   Thread* const thread = Thread::current();
-  uint const slot = alloc_region_slot(thread);
+  uint32_t const slot = alloc_region_slot(thread);
 
   // Fast path: lock-free CAS allocation in THIS thread's stripe slot.
   ShenandoahHeapRegion* shared_region = _alloc_regions[slot].load_acquire();
@@ -350,7 +350,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(Shenan
 template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::release_alloc_regions() {
   shenandoah_assert_heaplocked();
-  for (uint i = 0; i < _alloc_region_count; i++) {
+  for (uint32_t i = 0; i < _alloc_region_count; i++) {
     release_alloc_region(i);
   }
 }
@@ -359,9 +359,9 @@ template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
   shenandoah_assert_heaplocked();
 
-  uint empty_slots[MAX_ALLOC_REGIONS];
-  uint empty_slot_count = 0;
-  for (uint i = 0; i < _alloc_region_count; i++) {
+  uint32_t empty_slots[MAX_ALLOC_REGIONS];
+  uint32_t empty_slot_count = 0;
+  for (uint32_t i = 0; i < _alloc_region_count; i++) {
     if (_alloc_regions[i].load_relaxed() == nullptr) {
       empty_slots[empty_slot_count++] = i;
     }
@@ -379,7 +379,7 @@ void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
   // reserve_alloc_regions() has already prepared, retired, and activated each region. Publish the
   // pointers only after the batch accounting reconciliation has completed.
   for (int i = 0; i < reserved_count; i++) {
-    const uint slot = empty_slots[i];
+    const uint32_t slot = empty_slots[i];
     assert(_alloc_regions[slot].load_relaxed() == nullptr, "Slot must remain empty under the heap lock");
     assert(reserved[i]->is_atomic_alloc_region(), "Reserved region must be active before publication");
     _alloc_regions[slot].release_store(reserved[i]);
@@ -387,7 +387,7 @@ void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint slot) {
+void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint32_t slot) {
   shenandoah_assert_heaplocked();
   ShenandoahHeapRegion* alloc_region = _alloc_regions[slot].load_relaxed();
   if (alloc_region == nullptr) {
