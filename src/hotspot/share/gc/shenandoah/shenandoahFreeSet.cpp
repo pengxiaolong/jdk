@@ -343,84 +343,65 @@ size_t ShenandoahFreeSet::retire_region(ShenandoahFreeSetPartitionId partition, 
   return _partitions.retire_from_partition(partition, idx, used_bytes);
 }
 
-size_t ShenandoahFreeSet::alloc_region_correction(ShenandoahFreeSetPartitionId partition) const {
-  ShenandoahAllocator* const allocator = _heap->allocator();
-  assert(allocator != nullptr, "Allocator must have been initialized");
-  return allocator->remnant_bytes(partition);
-}
-
-// Used/available accessors below compensate for the CAS alloc-region pre-charge. retire_region()
-// charges a reserved region's entire free capacity to the partition's used (and drops it from the
-// free-region count) before any CAS allocation actually consumes it. So the partition's stored
-// used is over-counted, and available under-counted, by exactly the cached region's current free().
-// We correct that here at read time, leaving the stored partition counters (and their rebuild
-// invariants) untouched. The Collector/OldCollector regions are released before a rebuild
-// (prepare_to_rebuild() calls release_collector_alloc_regions()), so their correction term is 0
-// there and the Collector/OldCollector accessors equal the raw stored values. The Mutator regions
-// are NOT released at rebuild: find_regions_with_alloc_capacity() re-accounts them in place, so the
-// Mutator correction term is generally non-zero across a rebuild (only a Full GC, which releases ALL
-// regions before walking the heap, zeroes it).
-//
-// The subtraction is saturating because these accessors may run concurrently (off heap lock):
-// the stored used is a snapshot from the last under-lock recompute, while the correction term is
-// read live, so a region swap between the two reads can momentarily make the correction exceed the
-// snapshot. The stored used always covers the correction of the region that was cached when it was
-// computed, so any excess is a transient artifact of a stale snapshot, not an accounting error.
-size_t ShenandoahFreeSet::corrected_used(size_t stored_used, size_t correction) {
-  return stored_used > correction ? stored_used - correction : 0;
+// Used/available accessors below compensate for the CAS alloc-region pre-charge, so used won't
+// be over-counted and available won't be under-counted. The subtraction saturates at 0 because
+// precharged_used and remnant_bytes are sampled at different times off the heap lock; a region
+// swap between the two reads can transiently make remnant_bytes exceed the stale snapshot.
+size_t ShenandoahFreeSet::net_used(size_t precharged_used, size_t remnant_bytes) {
+  return precharged_used > remnant_bytes ? precharged_used - remnant_bytes : 0;
 }
 
 size_t ShenandoahFreeSet::young_used() {
-  return corrected_used(_total_young_used,
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::Mutator) +
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::Collector));
+  return net_used(_total_young_used,
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Mutator) +
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Collector));
 }
 
 size_t ShenandoahFreeSet::old_used() {
-  return corrected_used(_total_old_used,
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::OldCollector));
+  return net_used(_total_old_used,
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::OldCollector));
 }
 
 size_t ShenandoahFreeSet::global_used() {
-  return corrected_used(_total_global_used,
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::Mutator) +
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::Collector) +
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::OldCollector));
+  return net_used(_total_global_used,
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Mutator) +
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Collector) +
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::OldCollector));
 }
 
 size_t ShenandoahFreeSet::used_holding_lock() const {
   shenandoah_assert_heaplocked();
-  return corrected_used(_partitions.used_by(ShenandoahFreeSetPartitionId::Mutator),
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::Mutator));
+  return net_used(_partitions.used_by(ShenandoahFreeSetPartitionId::Mutator),
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Mutator));
 }
 
 size_t ShenandoahFreeSet::used_not_holding_lock() {
   shenandoah_assert_not_heaplocked();
   ShenandoahRebuildLocker locker(rebuild_lock());
-  return corrected_used(_partitions.used_by(ShenandoahFreeSetPartitionId::Mutator),
-                        alloc_region_correction(ShenandoahFreeSetPartitionId::Mutator));
+  return net_used(_partitions.used_by(ShenandoahFreeSetPartitionId::Mutator),
+                  _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Mutator));
 }
 
 size_t ShenandoahFreeSet::available() {
   shenandoah_assert_not_heaplocked();
   ShenandoahRebuildLocker locker(rebuild_lock());
   return _partitions.available_in_locked_for_rebuild(ShenandoahFreeSetPartitionId::Mutator) +
-         alloc_region_correction(ShenandoahFreeSetPartitionId::Mutator);
+         _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Mutator);
 }
 
 size_t ShenandoahFreeSet::available_locked() const {
   return _partitions.available_in(ShenandoahFreeSetPartitionId::Mutator) +
-         alloc_region_correction(ShenandoahFreeSetPartitionId::Mutator);
+         _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Mutator);
 }
 
 size_t ShenandoahFreeSet::collector_available_locked() const {
   return _partitions.available_in(ShenandoahFreeSetPartitionId::Collector) +
-         alloc_region_correction(ShenandoahFreeSetPartitionId::Collector);
+         _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::Collector);
 }
 
 size_t ShenandoahFreeSet::old_collector_available_locked() const {
   return _partitions.available_in(ShenandoahFreeSetPartitionId::OldCollector) +
-         alloc_region_correction(ShenandoahFreeSetPartitionId::OldCollector);
+         _heap->allocator()->remnant_bytes(ShenandoahFreeSetPartitionId::OldCollector);
 }
 
 void ShenandoahFreeSet::unretire_alloc_region(ShenandoahFreeSetPartitionId partition, ShenandoahHeapRegion* r) {
@@ -434,22 +415,12 @@ void ShenandoahFreeSet::unretire_alloc_region(ShenandoahFreeSetPartitionId parti
   assert(free_bytes >= ShenandoahHeap::plab_min_size() * HeapWordSize, "Only unretire regions still worth allocating from");
   _partitions.decrease_used(partition, free_bytes);
   _partitions.increase_region_counts(partition, 1);
-  // The empty-region count is availability-based: a region counts as empty iff its entire capacity
-  // is free. If this reserved region was never allocated into (or had all its CAS allocations
-  // released), it returns to the partition fully free, so restore the empty count that retire
-  // implicitly dropped. This is the symmetric inverse of the per-region retire bookkeeping done when
-  // the region was installed as an alloc region. (unretire_to_partition -> make_free already
-  // restores the empty interval.)
   const bool became_empty = (free_bytes == _partitions.region_size_bytes());
   if (became_empty) {
     _partitions.increase_empty_region_counts(partition, 1);
-    // An installed alloc region was made _regular and affiliated. A fully-free region must look
-    // like a genuine empty region everywhere: the region-transfer paths (move_regions_from_collector
-    // _to_mutator) classify emptiness by *state* via can_allocate_from() (is_empty_state), while the
-    // partition empty count/interval is *availability*-based. If we leave it _regular + affiliated,
-    // it is skipped by the empty-transfer path yet trips the non-empty path's "ac < region_size"
-    // assert. Reset it to a true empty region (the exact inverse of reserve), so both views agree.
-    // Region state transitions require regular regions to pass through trash before becoming empty.
+    // Reset to a true empty region so state (is_empty_state) agrees with availability: otherwise
+    // region-transfer paths that classify emptiness by state would skip it while the non-empty
+    // path's "ac < region_size" assert would trip on it.
     r->make_trash();
     r->set_affiliation(FREE);
     r->make_empty();
@@ -596,8 +567,7 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
   // Number of empty regions consumed from PARTITION; the empty-region count is adjusted once below.
   size_t emptied_regions = 0;
 
-  // Reserve a single suitable region from PARTITION found by `iterator`, retiring it from the
-  // partition (membership + interval) but deferring the partition-total recompute to the batch end.
+  // Reserve suitable regions from PARTITION found by `iterator`.
   auto reserve_one = [&](auto& iterator) {
     for (idx_t idx = iterator.current(); iterator.has_next() && reserved_count < regions_to_reserve; idx = iterator.next()) {
       ShenandoahHeapRegion* r = _heap->get_region(idx);
@@ -613,11 +583,9 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
       if (alloc_capacity(r) < min_free_bytes) {
         continue;
       }
-      // The partition's empty-region count is availability-based: a region counts as empty iff its
-      // entire capacity is free (alloc_capacity == region_size_bytes), regardless of its state. So a
-      // full-free region that is already affiliated and _regular (e.g. reserved-but-never-allocated,
-      // or freshly recycled) is still counted as empty and must be decremented here when retired.
-      // Track that separately from the state-based is_empty() prep below.
+      // Empty-region count is availability-based (alloc_capacity == region_size_bytes), not
+      // state-based, so a full-free but already-affiliated/_regular region still counts as empty
+      // and must be decremented here, separately from the state-based is_empty() prep below.
       if (alloc_capacity(r) == _partitions.region_size_bytes()) {
         emptied_regions++;
       }
@@ -630,12 +598,10 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
           _heap->old_generation()->clear_cards_for(r);
         }
       }
-      // Retire the region from the partition (membership + interval + used pre-charge), but do not
-      // recompute partition totals yet -- that happens once after the whole batch.
+      // Retire from the partition now; defer the partition-total recompute to the batch end.
       _partitions.retire_from_partition(PARTITION, idx, r->used());
-      // Activate the region as a CAS alloc region now, so it satisfies the assert_bounds()
-      // invariant (a retired-with-capacity region must be an active alloc region) when the batch's
-      // trailing recompute runs. The flag must be set before activation (ordering contract).
+      // Must activate before the batch's trailing assert_bounds() runs, and the flag must be set
+      // before activation (ordering contract).
       if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
         r->set_gc_alloc_region(true);
       }
@@ -652,8 +618,7 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
     reserve_one(iterator);
   }
 
-  // Reconcile the deferred per-region retires from the partition scan with a single recompute,
-  // restoring the affiliated/used/interval invariants before any further freeset mutation.
+  // Reconcile the deferred per-region retires with a single recompute.
   if (reserved_count > 0 || emptied_regions > 0) {
     if (emptied_regions > 0) {
       _partitions.decrease_empty_region_counts(PARTITION, emptied_regions);
@@ -2156,7 +2121,7 @@ size_t ShenandoahFreeSet::find_regions_with_alloc_capacity(size_t &young_trashed
       // entire capacity is pre-charged to used, it counts toward total and affiliated region
       // counts, and it is left out of the free set (membership stays NotFree from clear()).
       // Subsequent CAS allocations consume the pre-charge; read-time accessors correct for the
-      // still-free remnant via alloc_region_correction(). Mutator alloc regions are always young.
+      // still-free remnant via allocator()->remnant_bytes(). Mutator alloc regions are always young.
       assert(region->is_young() && !region->is_trash(), "Active alloc region must be young and non-trash");
       mutator_used += region_size_bytes;
       total_mutator_regions++;

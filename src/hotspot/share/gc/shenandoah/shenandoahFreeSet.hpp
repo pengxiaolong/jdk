@@ -665,14 +665,8 @@ public:
   size_t alloc_capacity(ShenandoahHeapRegion *r) const;
   size_t alloc_capacity(size_t idx) const;
 
-  // Correction term (bytes) for a partition's cached CAS alloc region. The region's free
-  // capacity was pre-charged to the partition's used at reserve time but is not yet consumed,
-  // so used accessors subtract it and available accessors add it back. Returns 0 when no
-  // region is cached or before the allocator exists. Defined in the .cpp to reach the allocator.
-  size_t alloc_region_correction(ShenandoahFreeSetPartitionId partition) const;
-
-  // Saturating stored_used - correction; see the comment on the corrected accessors in the .cpp.
-  static size_t corrected_used(size_t stored_used, size_t correction);
+  // Saturating precharged_used - remnant_bytes; see the comment on the net accessors in the .cpp.
+  static size_t net_used(size_t precharged_used, size_t remnant_bytes);
 
   // Raw (uncorrected) used totals: the stored partition used including the full pre-charge of any
   // active CAS alloc region, WITHOUT subtracting the still-unconsumed remnant. Unlike the corrected
