@@ -25,6 +25,7 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 
+#include "gc/shared/tlab_globals.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
