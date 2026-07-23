@@ -33,15 +33,13 @@
 #include "utilities/powerOfTwo.hpp"
 
 // ShenandoahPartitionAllocator allocates memory for one free-set partition. The fast path is
-// lock-free: it caches a small set of "alloc regions" (a stripe array) and bump-allocates within
+// lock-free, it caches a small set of "alloc regions" (a stripe array) and bump-allocates within
 // them using CAS on the region's atomic top. To spread CAS contention, each thread maps to a
-// per-thread slot (stored in thread-local data) and the fast path probes ONLY that slot (ZGC-like:
-// one shared region per stripe, no cross-stripe scan). When the fast path fails, a heap-locked slow
-// path takes a fresh region from the free set, allocates from it, and installs it into the thread's
-// slot for subsequent lock-free use; the prior occupant is retired. Only if the free set is fully
-// exhausted does the slow path fall back to scanning all sibling slots as a last resort, so a full
-// own-slot never causes a spurious allocation failure while a sibling still has room.
-// Templated on partition ID so partition-specific behavior is resolved at compile time.
+// per-thread slot (stored in thread-local data) and the fast path probes ONLY that slot.
+// When the fast path fails, the thread try to acquire heap lock, it probes sibling slots if the
+// lock is currently held by other thread. After acquiring heap-locked, the slow path takes
+// a fresh region from the free set, allocates from it, and installs it into the thread's
+// slot for subsequent lock-free use.
 template<ShenandoahFreeSetPartitionId PARTITION>
 class ShenandoahPartitionAllocator : public CHeapObj<mtGC> {
   friend class VMStructs;

@@ -41,15 +41,10 @@ static uint32_t round_power_of_2(const uint32_t x) {
   return (x - low < high - x) ? low : high;
 }
 
-// Derive the number of CAS alloc-region stripe slots for the mutator allocator. Striping spreads
-// lock-free allocation contention, so it is bounded by the available parallelism (no benefit in
-// more slots than CPUs the process may run on). It is also bounded by heap size: each slot holds a
-// reserved region whose remaining capacity is pre-charged to used, so too many slots on a small
-// heap would pin most of the heap as partially-filled tails and starve humongous/contiguous allocations.
-//
-// ShenandoahMutatorAllocRegions overrides the derived value when set to a non-zero count; 0 means
-// "derive" (whether left at the default or passed explicitly as =0, so the behavior matches the
-// flag's help text). An explicit value is still capped at MAX_ALLOC_REGIONS.
+// Derive the number of CAS alloc-region stripe slots for the mutator allocator: bounded by CPU
+// count (no benefit beyond available parallelism) and by heap size (too many reserved regions
+// would starve humongous allocation). ShenandoahMutatorAllocRegions overrides with an explicit
+// count when non-zero, still capped at MAX_ALLOC_REGIONS.
 static uint32_t mutator_alloc_regions() {
   if (ShenandoahMutatorAllocRegions != 0) {
     assert(is_power_of_2(ShenandoahMutatorAllocRegions), "Must be a power of 2");
