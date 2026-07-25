@@ -130,6 +130,8 @@
  *      TestAllocRegions 128
  */
 
+import java.util.concurrent.atomic.AtomicLong;
+
 /**
  * Allocates enough garbage to trigger several GC cycles, exercising:
  *   - ShenandoahAllocator fast path (CAS into shared alloc regions)
@@ -154,6 +156,16 @@ public class TestAllocRegions {
     // Per-thread retention slot, kept live so each thread's rolling window isn't optimized away.
     static volatile Object[] sinks;
 
+    // First unexpected throwable raised by any worker (most plausibly OutOfMemoryError when the
+    // allocation rate outpaces GC on a slow CI host). Captured and rethrown from main so a real
+    // worker failure surfaces as itself instead of being masked by a silent EXIT_STATUS=0.
+    static volatile Throwable workerError;
+
+    // Number of workers that ran their full allocation loop to the per-thread target and
+    // published their window. main asserts every worker reached this so an early exit can't
+    // pass silently.
+    static final AtomicLong completedWorkers = new AtomicLong();
+
     public static void main(String[] args) throws Exception {
         int nThreads = args.length > 0 ? Integer.parseInt(args[0]) : 1;
         long perThreadBytes = TARGET_BYTES / nThreads;
@@ -164,24 +176,45 @@ public class TestAllocRegions {
         for (int i = 0; i < nThreads; i++) {
             final int id = i;
             threads[i] = new Thread(() -> {
-                long allocated = 0;
-                // Small rolling window: keeps a tiny live set per thread so we exercise the
-                // allocator's install/replace path without letting the live set outpace GC.
-                Object[] window = new Object[4];
-                int wIdx = 0;
-                while (allocated < perThreadBytes) {
-                    byte[] obj = new byte[OBJ_SIZE];
-                    obj[0] = (byte) id;
-                    window[wIdx] = obj;
-                    wIdx = (wIdx + 1) & 3;
-                    allocated += OBJ_SIZE;
+                try {
+                    long allocated = 0;
+                    // Small rolling window: keeps a tiny live set per thread so we exercise the
+                    // allocator's install/replace path without letting the live set outpace GC.
+                    Object[] window = new Object[4];
+                    int wIdx = 0;
+                    while (allocated < perThreadBytes) {
+                        byte[] obj = new byte[OBJ_SIZE];
+                        obj[0] = (byte) id;
+                        window[wIdx] = obj;
+                        wIdx = (wIdx + 1) & 3;
+                        allocated += OBJ_SIZE;
+                    }
+                    sinks[id] = window;  // publish so the window isn't dead-code-eliminated
+                    completedWorkers.incrementAndGet();
+                } catch (Throwable t) {
+                    // Record the first real failure (e.g. OutOfMemoryError) so main can rethrow
+                    // it as the actual cause instead of letting the run exit 0.
+                    workerError = t;
                 }
-                sinks[id] = window;  // publish so the window isn't dead-code-eliminated
             }, "allocator-" + i);
             threads[i].start();
         }
         for (Thread t : threads) {
             t.join();
+        }
+
+        // If any worker died with an unexpected throwable (most plausibly OutOfMemoryError when a
+        // slow CI host can't keep up with the allocation rate), report that as the real cause.
+        if (workerError != null) {
+            throw new IllegalStateException("Worker thread failed during allocation", workerError);
+        }
+
+        // Every worker must have run its loop to the per-thread target and published its window;
+        // otherwise the run did not actually exercise the allocator as intended.
+        long completed = completedWorkers.get();
+        if (completed != nThreads) {
+            throw new IllegalStateException("Only " + completed + " of " + nThreads
+                                            + " workers completed their allocation target");
         }
         System.out.println("Done");
     }
