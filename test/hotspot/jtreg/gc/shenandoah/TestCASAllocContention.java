@@ -47,13 +47,14 @@
 
 /*
  * @test id=many-slots
- * @summary Many alloc region slots, typically more than actively used
+ * @summary All 32 alloc region slots instantiated (heap_bound>=32 for both partitions)
  * @bug 8361099
  * @requires vm.gc.Shenandoah
+ * @requires os.maxMemory > 4G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
- *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      -XX:ShenandoahRegionSize=256K -XX:+ShenandoahVerify -Xmx4g -Xms4g
  *      TestCASAllocContention
  */
 
@@ -83,13 +84,15 @@
 
 /*
  * @test id=generational-many-slots
- * @summary Generational mode with many alloc region slots, typically more than actively used
+ * @summary Generational mode with all 32 slots instantiated (heap_bound>=32)
  * @bug 8361099
  * @requires vm.gc.Shenandoah
+ * @requires os.maxMemory > 4G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahGCMode=generational -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
- *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      -XX:ShenandoahGCMode=generational -XX:ShenandoahRegionSize=256K
+ *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
+ *      -XX:+ShenandoahVerify -Xmx4g -Xms4g
  *      TestCASAllocContention
  */
 

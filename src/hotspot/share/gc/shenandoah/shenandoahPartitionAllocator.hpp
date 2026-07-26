@@ -106,6 +106,8 @@ private:
 public:
   ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count);
 
+  uint32_t alloc_region_count() const { return _alloc_region_count; }
+
   // Allocate from this partition. Returns nullptr if partition cannot satisfy the request.
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 

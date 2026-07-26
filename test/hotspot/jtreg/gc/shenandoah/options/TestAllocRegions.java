@@ -47,13 +47,14 @@
 
 /*
  * @test id=max-mutator
- * @summary Maximum mutator alloc regions, driven by enough threads to populate all 32 slots
+ * @summary Maximum mutator alloc regions with heap large enough for heap_bound>=32
  * @bug 8361099
  * @requires vm.gc.Shenandoah
+ * @requires os.maxMemory > 2G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahMutatorAllocRegions=32
- *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahRegionSize=256K
+ *      -XX:+ShenandoahVerify -Xmx2g -Xms2g
  *      TestAllocRegions 32
  */
 
@@ -71,13 +72,14 @@
 
 /*
  * @test id=max-collector
- * @summary Maximum collector alloc regions (upper bound of the flag range)
+ * @summary Maximum collector alloc regions with heap large enough for heap_bound>=32
  * @bug 8361099
  * @requires vm.gc.Shenandoah
+ * @requires os.maxMemory > 4G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahCollectorAllocRegions=32
- *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
+ *      -XX:ShenandoahCollectorAllocRegions=32 -XX:ShenandoahRegionSize=256K
+ *      -XX:+ShenandoahVerify -Xmx4g -Xms4g
  *      TestAllocRegions
  */
 
@@ -119,14 +121,15 @@
 
 /*
  * @test id=generational-max-both
- * @summary Generational mode with maximum alloc regions, driven by enough threads to populate all 32 mutator slots
+ * @summary Generational mode with maximum alloc regions (heap_bound>=32 for both)
  * @bug 8361099
  * @requires vm.gc.Shenandoah
+ * @requires os.maxMemory > 4G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahGCMode=generational
+ *      -XX:ShenandoahGCMode=generational -XX:ShenandoahRegionSize=256K
  *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
- *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      -XX:+ShenandoahVerify -Xmx4g -Xms4g
  *      TestAllocRegions 32
  */
 

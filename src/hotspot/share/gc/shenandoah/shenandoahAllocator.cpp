@@ -27,6 +27,7 @@
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
+#include "logging/log.hpp"
 #include "runtime/os.hpp"
 
 // Round x to the closest power of 2 value.
@@ -72,7 +73,11 @@ ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set)
   : _free_set(free_set),
     _mutator_allocator(free_set, mutator_alloc_regions()),
     _collector_allocator(free_set, collector_alloc_regions()),
-    _old_collector_allocator(free_set, collector_alloc_regions()) {}
+    _old_collector_allocator(free_set, collector_alloc_regions()) {
+  log_info(gc, init)("CAS Alloc Regions: mutator=%u, collector=%u",
+                     _mutator_allocator.alloc_region_count(),
+                     _collector_allocator.alloc_region_count());
+}
 
 HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
   if (ShenandoahHeapRegion::requires_humongous(req.size())) {
