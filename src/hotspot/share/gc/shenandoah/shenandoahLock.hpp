@@ -31,32 +31,7 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/safepoint.hpp"
 
-// In-flight release callback for the Lock.ThreadBlockInVMPreprocess invokes operator() after the acquiring JavaThread
-// has transitioned back to _thread_in_vm, but before it processes a pending safepoint, giving us the chance to release
-// the just-acquired lock so the thread does not hold it across the safepoint.
-template<typename Lock>
-class ShenandoahInFlightLockRelease {
-private:
-  Lock* _lock;  // non-null == armed (we hold the lock and may need to release it for a safepoint)
-public:
-  ShenandoahInFlightLockRelease() : _lock(nullptr) {}
-  void arm(Lock* lock) {
-    assert(lock != nullptr, "Must not");
-    _lock = lock;
-  }
-  void operator()(JavaThread* current) {
-    if (_lock != nullptr) {
-      _lock->release_for_safepoint();
-      _lock = nullptr;
-    }
-  }
-  bool released() {
-    return _lock == nullptr;
-  }
-};
-
 class ShenandoahLock {
-  template<typename Lock> friend class ShenandoahInFlightLockRelease;
 private:
   enum LockState { unlocked = 0, locked = 1 };
 
@@ -69,17 +44,9 @@ private:
 #endif
 
   template<bool ALLOW_BLOCK>
-  bool contended_lock_internal(JavaThread* java_thread);
+  void contended_lock_internal(JavaThread* java_thread);
   static void yield_or_sleep(int &yields);
 
-  // Release _state on behalf of an arriving safepoint (in-flight release). Called from the ThreadBlockInVMPreprocess
-  // callback only when contended_lock_internal had just acquired the lock and a safepoint is about to be processed,
-  // so the thread does not hold the lock across the safepoint.
-  void release_for_safepoint() {
-    // No owner/critical-section writes exist at this point (the owner is set only after
-    // contended_lock returns), so a plain store is sufficient.
-    _state.store_relaxed(unlocked);
-  }
 public:
   ShenandoahLock() : _state(unlocked) {
     DEBUG_ONLY(_owner.store_relaxed(nullptr);)
@@ -125,7 +92,7 @@ public:
 
   void contended_lock(bool allow_block_for_safepoint);
 
-  bool owned_by_self() const {
+  bool owned_by_self() {
 #ifdef ASSERT
     return _state.load_relaxed() == locked && _owner.load_relaxed() == Thread::current();
 #else
@@ -137,43 +104,12 @@ public:
 
 // Simple lock using PlatformMonitor
 class ShenandoahSimpleLock {
-  template<typename Lock> friend class ShenandoahInFlightLockRelease;
 private:
   PlatformMonitor   _lock; // native lock
-  DEBUG_ONLY(Atomic<Thread*> _owner;)
-
-  void contended_lock_for_java_thread(JavaThread* java_thread);
-
-  // Release the native lock on behalf of an arriving safepoint (in-flight release). Called from the
-  // ThreadBlockInVMPreprocess callback while the acquiring JavaThread is being safepointed.
-  void release_for_safepoint() {
-    // The owner is set only after lock() returns, so there is no owner write to undo here.
-    _lock.unlock();
-  }
 public:
   ShenandoahSimpleLock();
   void lock(bool allow_block_for_safepoint = false);
   void unlock();
-
-  bool try_lock() {
-    bool const acquired = _lock.try_lock();
-#ifdef ASSERT
-    if (acquired) {
-      assert(_owner.load_relaxed() == nullptr, "must not be owned");
-      DEBUG_ONLY(_owner.store_relaxed(Thread::current());)
-    }
-#endif
-    return acquired;
-  }
-
-  bool owned_by_self() const {
-#ifdef ASSERT
-    return _owner.load_relaxed() == Thread::current();
-#else
-    ShouldNotReachHere();
-    return false;
-#endif
-  }
 };
 
 // templated reentrant lock
@@ -188,7 +124,6 @@ public:
   ~ShenandoahReentrantLock();
 
   void lock(bool allow_block_for_safepoint = false);
-  bool try_lock();
   void unlock();
 
   // If the lock already owned by this thread
