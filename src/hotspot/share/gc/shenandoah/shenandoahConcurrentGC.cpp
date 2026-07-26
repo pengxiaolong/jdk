@@ -113,6 +113,8 @@ void ShenandoahConcurrentGC::entry_concurrent_update_refs_prepare(ShenandoahHeap
   heap->try_inject_pin();
   // Evacuation is complete, retire gc labs and change gc state
   heap->concurrent_prepare_for_update_refs();
+  // GC state has changed, it is safe to release all collect alloc regions
+  heap->allocator()->release_collector_alloc_regions_under_lock();
 }
 
 void ShenandoahConcurrentGC::entry_update_card_table() {
@@ -609,7 +611,6 @@ void ShenandoahConcurrentGC::entry_evacuate() {
   heap->try_inject_alloc_failure();
   heap->try_inject_pin();
   op_evacuate();
-  heap->allocator()->release_collector_alloc_regions_under_lock();
 }
 
 void ShenandoahConcurrentGC::entry_update_thread_roots() {
