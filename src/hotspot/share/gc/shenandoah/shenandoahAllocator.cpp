@@ -137,11 +137,6 @@ void ShenandoahAllocator::reserve_collector_alloc_regions_under_lock() {
   }
 }
 
-void ShenandoahAllocator::reserve_mutator_alloc_regions_under_lock() {
-  ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
-  _mutator_allocator.reserve_alloc_regions();
-}
-
 size_t ShenandoahAllocator::remnant_bytes(ShenandoahFreeSetPartitionId partition) const {
   switch (partition) {
     case ShenandoahFreeSetPartitionId::Mutator:      return _mutator_allocator.remnant_bytes();

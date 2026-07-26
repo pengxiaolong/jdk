@@ -313,8 +313,6 @@ void ShenandoahDegenGC::op_degenerated() {
 
       op_cleanup_complete();
 
-      heap->allocator()->reserve_mutator_alloc_regions_under_lock();
-
       if (heap->mode()->is_generational()) {
         ShenandoahGenerationalHeap::heap()->complete_degenerated_cycle();
       }
@@ -432,9 +430,6 @@ void ShenandoahDegenGC::op_evacuate() {
 void ShenandoahDegenGC::op_init_update_refs() {
   // Evacuation has completed
   ShenandoahHeap* const heap = ShenandoahHeap::heap();
-  // Release the collector alloc regions reserved during evacuation before update-refs, so
-  // that regions holding evacuated objects sync their _atomic_top to _top and advance their
-  // update watermark before the heap is iterated.
   heap->prepare_update_heap_references();
   heap->set_update_refs_in_progress(true);
 }

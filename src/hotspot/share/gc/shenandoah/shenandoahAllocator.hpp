@@ -68,9 +68,6 @@ public:
   // remains on the allocation path.
   void reserve_collector_alloc_regions_under_lock();
 
-  // Proactively fill empty mutator CAS allocation-region slots. Caller must hold the heap lock.
-  void reserve_mutator_alloc_regions_under_lock();
-
   // Return the free bytes in the calling thread's mutator alloc region, or max_tlab_size if the
   // region is empty or too small. Used by unsafe_max_tlab_alloc() for TLAB sizing hints.
   size_t unsafe_max_tlab_alloc(Thread* thread) {

@@ -282,8 +282,6 @@ void ShenandoahFullGC::do_it(GCCause::Cause gc_cause) {
   heap->set_full_gc_move_in_progress(false);
   heap->set_full_gc_in_progress(false);
 
-  heap->allocator()->reserve_mutator_alloc_regions_under_lock();
-
   DEBUG_ONLY(heap->assert_no_self_forwards());
 
   if (ShenandoahVerify) {

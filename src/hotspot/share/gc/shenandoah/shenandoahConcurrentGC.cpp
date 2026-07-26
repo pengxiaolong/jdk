@@ -844,7 +844,6 @@ void ShenandoahConcurrentGC::op_final_mark() {
         }
       }
     }
-    heap->allocator()->reserve_mutator_alloc_regions_under_lock();
     if (!heap->collection_set()->is_empty()) {
       heap->allocator()->reserve_collector_alloc_regions_under_lock();
     }
