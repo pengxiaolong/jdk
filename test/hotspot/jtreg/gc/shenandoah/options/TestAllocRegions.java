@@ -47,14 +47,14 @@
 
 /*
  * @test id=max-mutator
- * @summary Maximum mutator alloc regions, driven by enough threads to populate all 128 slots
+ * @summary Maximum mutator alloc regions, driven by enough threads to populate all 32 slots
  * @bug 8361099
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahMutatorAllocRegions=128
+ *      -XX:ShenandoahMutatorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
- *      TestAllocRegions 128
+ *      TestAllocRegions 32
  */
 
 /*
@@ -76,7 +76,7 @@
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahCollectorAllocRegions=128
+ *      -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
  *      TestAllocRegions
  */
@@ -119,15 +119,15 @@
 
 /*
  * @test id=generational-max-both
- * @summary Generational mode with maximum alloc regions, driven by enough threads to populate all 128 mutator slots
+ * @summary Generational mode with maximum alloc regions, driven by enough threads to populate all 32 mutator slots
  * @bug 8361099
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational
- *      -XX:ShenandoahMutatorAllocRegions=128 -XX:ShenandoahCollectorAllocRegions=128
+ *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
- *      TestAllocRegions 128
+ *      TestAllocRegions 32
  */
 
 import java.util.concurrent.atomic.AtomicLong;

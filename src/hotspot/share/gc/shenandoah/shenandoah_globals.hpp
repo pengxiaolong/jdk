@@ -403,7 +403,7 @@
           "allocator. Threads probe a per-thread slot for lock-free "       \
           "allocation to spread contention. 0 (default) derives the value " \
           "from CPU count and heap size; 1 disables striping.")             \
-          range(0, 128)                                                      \
+          range(0, 32)                                                      \
                                                                             \
   product(uint, ShenandoahCollectorAllocRegions, 0, EXPERIMENTAL,           \
           "Number of CAS alloc regions striped across each collector "      \
@@ -413,7 +413,7 @@
           "bounded evacuation reserve, so a larger value reduces the "      \
           "effective reserve; on small heaps this can increase "            \
           "overflow into the mutator partition.")                           \
-          range(0, 128)                                                      \
+          range(0, 32)                                                      \
                                                                             \
   product(uintx, ShenandoahOldEvacPercent, 75, EXPERIMENTAL,                \
           "The maximum evacuation to old-gen expressed as a percent of "    \

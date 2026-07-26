@@ -52,7 +52,7 @@
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahMutatorAllocRegions=128 -XX:ShenandoahCollectorAllocRegions=128
+ *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
  */
@@ -88,7 +88,7 @@
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahGCMode=generational -XX:ShenandoahMutatorAllocRegions=128 -XX:ShenandoahCollectorAllocRegions=128
+ *      -XX:ShenandoahGCMode=generational -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
  */

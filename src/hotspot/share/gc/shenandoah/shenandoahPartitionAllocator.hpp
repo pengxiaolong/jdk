@@ -45,7 +45,7 @@ class ShenandoahPartitionAllocator : public CHeapObj<mtGC> {
   friend class VMStructs;
 
 public:
-  static constexpr uint32_t MAX_ALLOC_REGIONS = 128;
+  static constexpr uint32_t MAX_ALLOC_REGIONS = 32;
 
 private:
   ShenandoahFreeSet* const _free_set;

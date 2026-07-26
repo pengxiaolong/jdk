@@ -44,27 +44,27 @@ static uint32_t round_power_of_2(const uint32_t x) {
 // Derive the number of CAS alloc-region stripe slots for the mutator allocator: bounded by CPU
 // count (no benefit beyond available parallelism) and by heap size (too many reserved regions
 // would starve humongous allocation). ShenandoahMutatorAllocRegions overrides with an explicit
-// count when non-zero, still capped at MAX_ALLOC_REGIONS.
+// count when non-zero, still clamped by heap_bound and MAX_ALLOC_REGIONS.
 static uint32_t mutator_alloc_regions() {
+  const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1)));
   if (ShenandoahMutatorAllocRegions != 0) {
     assert(is_power_of_2(ShenandoahMutatorAllocRegions), "Must be a power of 2");
-    return MIN2(checked_cast<uint32_t>(ShenandoahMutatorAllocRegions), ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS);
+    return MIN3(checked_cast<uint32_t>(ShenandoahMutatorAllocRegions), heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint32_t cpu_bound = checked_cast<uint32_t>(MAX2(os::initial_active_processor_count(), 1));
-  const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1)));
   return round_down_power_of_2(MIN3(cpu_bound, heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS));
 }
 
-// Derive the number of CAS alloc-region stripe slots for the mutator allocator.
+// Derive the number of CAS alloc-region stripe slots for the collector allocator.
 // Similar as mutator_alloc_regions(), but instead of using CPU processor count, ParallelGCThreads
-// is used.
+// is used, and the heap_bound divisor is 512 (collector reserves are smaller).
 static uint32_t collector_alloc_regions() {
+  const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1)));
   if (ShenandoahCollectorAllocRegions != 0) {
     assert(is_power_of_2(ShenandoahCollectorAllocRegions), "Must be a power of 2");
-    return MIN2(checked_cast<uint32_t>(ShenandoahCollectorAllocRegions), ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS);
+    return MIN3(checked_cast<uint32_t>(ShenandoahCollectorAllocRegions), heap_bound, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS);
   }
   const uint32_t worker_bound = MAX2(checked_cast<uint32_t>(ParallelGCThreads), 1u);
-  const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1)));
   return round_down_power_of_2(MIN3(worker_bound, heap_bound, ShenandoahCollectorAllocator::MAX_ALLOC_REGIONS));
 }
 
