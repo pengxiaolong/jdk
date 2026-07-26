@@ -130,6 +130,29 @@
  *      TestAllocRegions 32
  */
 
+/*
+ * @test id=no-tlab
+ * @summary Shared (non-LAB) allocation via -XX:-UseTLAB forces the allocate_atomic CAS path
+ * @bug 8361099
+ * @requires vm.gc.Shenandoah
+ *
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
+ *      -XX:-UseTLAB -XX:+ShenandoahVerify -Xmx256m -Xms256m
+ *      TestAllocRegions
+ */
+
+/*
+ * @test id=no-tlab-generational
+ * @summary Shared allocation path in generational mode
+ * @bug 8361099
+ * @requires vm.gc.Shenandoah
+ *
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
+ *      -XX:-UseTLAB -XX:ShenandoahGCMode=generational
+ *      -XX:+ShenandoahVerify -Xmx256m -Xms256m
+ *      TestAllocRegions
+ */
+
 import java.util.concurrent.atomic.AtomicLong;
 
 /**

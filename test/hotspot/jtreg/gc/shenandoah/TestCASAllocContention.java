@@ -93,6 +93,29 @@
  *      TestCASAllocContention
  */
 
+/*
+ * @test id=no-tlab
+ * @summary Shared (non-LAB) CAS allocation path via -XX:-UseTLAB exercises allocate_atomic
+ * @bug 8361099
+ * @requires vm.gc.Shenandoah
+ *
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
+ *      -XX:-UseTLAB -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      TestCASAllocContention
+ */
+
+/*
+ * @test id=no-tlab-single-slot
+ * @summary Shared CAS path with single alloc region slot (maximum contention on allocate_atomic)
+ * @bug 8361099
+ * @requires vm.gc.Shenandoah
+ *
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
+ *      -XX:-UseTLAB -XX:ShenandoahMutatorAllocRegions=1
+ *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      TestCASAllocContention
+ */
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 
