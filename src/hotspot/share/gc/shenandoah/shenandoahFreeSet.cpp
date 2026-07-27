@@ -541,10 +541,11 @@ template ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc<Shenando
 template ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc<ShenandoahFreeSetPartitionId::OldCollector>(size_t, bool&);
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_free_words,
-                                             ShenandoahHeapRegion** reserved) {
+uint32_t ShenandoahFreeSet::reserve_alloc_regions(uint32_t regions_to_reserve,
+                                                  size_t min_free_words,
+                                                  ShenandoahHeapRegion** reserved) {
   shenandoah_assert_heaplocked();
-  assert(0 < regions_to_reserve, "Sanity check");
+  assert(regions_to_reserve > 0, "Sanity check");
   if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
     update_allocation_bias();
   }
@@ -556,7 +557,7 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
     (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) ? OLD_GENERATION : YOUNG_GENERATION;
   const size_t min_free_bytes = min_free_words * HeapWordSize;
 
-  int reserved_count = 0;
+  uint32_t reserved_count = 0;
   // Number of empty regions consumed from PARTITION; the empty-region count is adjusted once below.
   size_t emptied_regions = 0;
 
@@ -640,9 +641,9 @@ int ShenandoahFreeSet::reserve_alloc_regions(int regions_to_reserve, size_t min_
   return reserved_count;
 }
 
-template int ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::Mutator>(int, size_t, ShenandoahHeapRegion**);
-template int ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::Collector>(int, size_t, ShenandoahHeapRegion**);
-template int ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::OldCollector>(int, size_t, ShenandoahHeapRegion**);
+template uint32_t ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::Mutator>(uint32_t, size_t, ShenandoahHeapRegion**);
+template uint32_t ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::Collector>(uint32_t, size_t, ShenandoahHeapRegion**);
+template uint32_t ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::OldCollector>(uint32_t, size_t, ShenandoahHeapRegion**);
 
 ShenandoahHeapRegion* ShenandoahFreeSet::steal_from_mutator(ShenandoahFreeSetPartitionId target_partition) {
   shenandoah_assert_heaplocked();

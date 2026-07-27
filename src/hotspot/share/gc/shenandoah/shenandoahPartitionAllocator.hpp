@@ -53,13 +53,18 @@ private:
   uint32_t const _alloc_region_count;       // power-of-two slot count
   uint32_t const _alloc_region_slot_mask;   // _alloc_region_count - 1
 
+  // Incremented on each batch replenish; threads that see a changed epoch after acquiring
+  // the heap lock know another thread already replenished and can retry without re-reserving.
+  volatile uint32_t _replenish_epoch;
+
   Atomic<ShenandoahHeapRegion*> _alloc_regions[MAX_ALLOC_REGIONS];
 
   uint32_t alloc_region_slot(Thread* thread);
 
-  // Scan sibling slots for remaining capacity (last resort before OOM or stealing).
+  // Scan slots for remaining capacity starting at start_slot.
   template<bool HEAP_LOCKED>
-  HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region, uint32_t start_slot, uint32_t count);
+  HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region,
+                                          uint32_t start_slot, uint32_t count);
 
   void uninstall_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant);
   bool try_install_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
@@ -81,6 +86,8 @@ public:
 
   // Must be called before free set rebuild (invalidates cached regions).
   void release_alloc_regions();
+
+  uint32_t replenish_alloc_regions(uint32_t& empty_alloc_region_count);
 
   // Pre-fill empty stripe slots from the partition. Caller must hold heap lock.
   void reserve_alloc_regions();

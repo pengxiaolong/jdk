@@ -37,7 +37,8 @@ template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count)
   : _free_set(free_set),
     _alloc_region_count(clamped_alloc_region_count(alloc_region_count)),
-    _alloc_region_slot_mask(_alloc_region_count - 1u) {
+    _alloc_region_slot_mask(_alloc_region_count - 1u),
+    _replenish_epoch(0) {
   for (uint32_t i = 0; i < MAX_ALLOC_REGIONS; i++) {
     _alloc_regions[i].store_relaxed(nullptr);
   }
@@ -67,7 +68,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
                                                                                  bool& in_new_region,
                                                                                  const uint32_t start_slot,
                                                                                  const uint32_t count) {
-  assert(count < _alloc_region_count, "Must be");
+  assert(count <= _alloc_region_count, "Must be");
   if (HEAP_LOCKED) {
     shenandoah_assert_heaplocked();
   }
@@ -79,7 +80,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
       if (HEAP_LOCKED &&
           (r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
         uninstall_alloc_region(i, r);
-      }
+          }
       if (obj != nullptr) {
         in_new_region = false;
         return obj;
@@ -147,29 +148,22 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   Thread* const thread = Thread::current();
   uint32_t const slot = alloc_region_slot(thread);
 
-  // Fast path: lock-free CAS bump in this thread's stripe slot.
-  ShenandoahHeapRegion* shared_region = _alloc_regions[slot].load_acquire();
-  if (shared_region != nullptr) {
-    HeapWord* obj = try_atomic_allocate_in(shared_region, req);
-    if (obj != nullptr) {
-      in_new_region = false;
-      return obj;
-    }
+  const uint32_t epoch_before = _replenish_epoch;
+  // Fast path: lock-free CAS bump, try all alloc regions starting from this thread's slot.
+  HeapWord* obj = try_allocate_in_alloc_regions<false>(req, in_new_region, slot, _alloc_region_count);
+  if (obj != nullptr) {
+    return obj;
   }
 
-  // Slow path
+  // All slots exhausted or empty — enter slow path to batch replenish.
   {
     ShenandoahHeap* const heap = ShenandoahHeap::heap();
     ShenandoahHeapLocker heap_locker(heap->lock(), req.is_mutator_alloc());
-    shared_region = _alloc_regions[slot].load_relaxed();
-    if (shared_region != nullptr) {
-      HeapWord* obj = try_atomic_allocate_in(shared_region, req);
-      if (shared_region->free_relaxed() >> LogHeapWordSize < ShenandoahHeap::plab_min_size()) {
-        uninstall_alloc_region(slot, shared_region);
-        shared_region = nullptr;
-      }
+
+    // Epoch advanced while we waited — another thread already replenished.
+    if (_replenish_epoch != epoch_before) {
+      obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot, _alloc_region_count);
       if (obj != nullptr) {
-        in_new_region = false;
         return obj;
       }
     }
@@ -180,53 +174,50 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
       }
     }
 
+    // Batch replenish empty/exhausted slots, then retry.
+    uint32_t slots_ready_to_replenish = 0;
+    const uint32_t replenished = replenish_alloc_regions(slots_ready_to_replenish);
+    if (replenished > 0) {
+      obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot, _alloc_region_count);
+      if (obj != nullptr) {
+        return obj;
+      }
+    }
+
+    if constexpr  (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
+      // Did not find any region from free set for replenishment, no memory for mutator alloc
+      if (replenished == 0 && slots_ready_to_replenish > 0) {
+        return nullptr;
+      }
+    }
+
     size_t min_req_words = req.is_lab_alloc() ? req.min_size() : req.size();
-    ShenandoahHeapRegion* fresh = _free_set->find_region_for_alloc<PARTITION>(min_req_words, in_new_region);
-    // Collectors try sibling slots before stealing from mutator.
+    ShenandoahHeapRegion* alloc_region = nullptr;
+    if (slots_ready_to_replenish == 0 || replenished > 0) {
+      // All slots still have capacity but none could satisfy this request — try a fresh region.
+      alloc_region = _free_set->find_region_for_alloc<PARTITION>(min_req_words, in_new_region);
+    }
     if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-      if (fresh == nullptr) {
-        if (_alloc_region_count > 1) {
-          HeapWord* obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot + 1, _alloc_region_count - 1);
-          if (obj != nullptr) {
-            return obj;
-          }
-        }
-        if (ShenandoahEvacReserveOverflow) {
-          fresh = _free_set->steal_from_mutator(PARTITION);
-          if (fresh != nullptr) {
-            assert(fresh->is_empty(), "Stolen region must be empty");
-            in_new_region = true;
-          }
+      if (alloc_region == nullptr && ShenandoahEvacReserveOverflow) {
+        alloc_region = _free_set->steal_from_mutator(PARTITION);
+        if (alloc_region != nullptr) {
+          assert(alloc_region->is_empty(), "Stolen region must be empty");
+          in_new_region = true;
         }
       }
     }
 
-    if (fresh != nullptr) {
+    if (alloc_region != nullptr) {
       bool retired_after_alloc = false;
-      HeapWord* result = allocate_in(fresh, req, retired_after_alloc);
+      HeapWord* result = allocate_in(alloc_region, req, retired_after_alloc);
       assert(result != nullptr, "Sanity check - allocate_in should always succeed");
       if (in_new_region) {
         _free_set->mark_region_used(PARTITION);
       }
-
       bool boundary_changed = in_new_region || retired_after_alloc;
-      if (!retired_after_alloc && try_install_alloc_region(slot, shared_region, fresh)) {
-        boundary_changed = true;
-      }
       _free_set->notify_allocation(PARTITION, in_new_region, boundary_changed);
       return result;
     }
-
-    if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
-      // Last resort: try sibling slots before giving up.
-      if (_alloc_region_count > 1) {
-        HeapWord* obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot + 1, _alloc_region_count - 1);
-        if (obj != nullptr) {
-          return obj;
-        }
-      }
-    }
-
     return nullptr;
   }
 }
@@ -299,6 +290,47 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(Shenan
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
+uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32_t& empty_slots_count) {
+  shenandoah_assert_heaplocked();
+
+  uint32_t empty_slots[MAX_ALLOC_REGIONS];
+  empty_slots_count = 0u;
+  // Prepare exhausted slots for replenishment.
+  for (uint32_t i = 0; i < _alloc_region_count; i++) {
+    ShenandoahHeapRegion* r = _alloc_regions[i].load_relaxed();
+    if (r == nullptr) {
+      empty_slots[empty_slots_count++] = i;
+    } else if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
+      uninstall_alloc_region(i, r);
+      empty_slots[empty_slots_count++] = i;
+    }
+  }
+  if (empty_slots_count == 0u) {
+    return 0u;
+  }
+
+  ShenandoahHeapRegion* reserved[MAX_ALLOC_REGIONS];
+  uint32_t reserved_count = _free_set->reserve_alloc_regions<PARTITION>(empty_slots_count,
+                                                                        ShenandoahHeap::plab_min_size(),
+                                                                        reserved);
+  assert(reserved_count <= empty_slots_count, "Cannot reserve more regions than empty slots");
+
+  if (reserved_count == 0) {
+    return  0;
+  }
+
+  for (uint32_t i = 0; i < reserved_count; i++) {
+    const uint32_t slot = empty_slots[i];
+    assert(_alloc_regions[slot].load_relaxed() == nullptr, "Slot must remain empty under the heap lock");
+    assert(reserved[i]->is_atomic_alloc_region(), "Reserved region must be active before publication");
+    _alloc_regions[slot].release_store(reserved[i]);
+  }
+  _replenish_epoch++;
+
+  return reserved_count;
+}
+
+template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::release_alloc_regions() {
   shenandoah_assert_heaplocked();
   for (uint32_t i = 0; i < _alloc_region_count; i++) {
@@ -309,30 +341,15 @@ void ShenandoahPartitionAllocator<PARTITION>::release_alloc_regions() {
 template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
   shenandoah_assert_heaplocked();
-
-  uint32_t empty_slots[MAX_ALLOC_REGIONS];
-  uint32_t empty_slot_count = 0;
+#ifdef ASSERT
   for (uint32_t i = 0; i < _alloc_region_count; i++) {
-    if (_alloc_regions[i].load_relaxed() == nullptr) {
-      empty_slots[empty_slot_count++] = i;
-    }
+    assert(_alloc_regions[i].load_relaxed() == nullptr, "alloc region slot must be cleared");
   }
-  if (empty_slot_count == 0) {
-    return;
-  }
+#endif
+  uint32_t empty_slots_count = 0;
+  replenish_alloc_regions(empty_slots_count);
 
-  const size_t min_free_words = ShenandoahHeap::plab_min_size();
-  ShenandoahHeapRegion* reserved[MAX_ALLOC_REGIONS];
-  int reserved_count = _free_set->reserve_alloc_regions<PARTITION>(checked_cast<int>(empty_slot_count),
-                                                                   min_free_words, reserved);
-  assert(reserved_count <= checked_cast<int>(empty_slot_count), "Cannot reserve more regions than empty slots");
-
-  for (int i = 0; i < reserved_count; i++) {
-    const uint32_t slot = empty_slots[i];
-    assert(_alloc_regions[slot].load_relaxed() == nullptr, "Slot must remain empty under the heap lock");
-    assert(reserved[i]->is_atomic_alloc_region(), "Reserved region must be active before publication");
-    _alloc_regions[slot].release_store(reserved[i]);
-  }
+  assert(empty_slots_count == alloc_region_count(), "Sanity");
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
