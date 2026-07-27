@@ -113,7 +113,7 @@ void ShenandoahConcurrentGC::entry_concurrent_update_refs_prepare(ShenandoahHeap
   heap->try_inject_pin();
   // Evacuation is complete, retire gc labs and change gc state
   heap->concurrent_prepare_for_update_refs();
-  // GC state has changed, it is safe to release all collect alloc regions
+  // GC state has changed, safe to release collector alloc regions
   heap->allocator()->release_collector_alloc_regions_under_lock();
 }
 
@@ -802,7 +802,7 @@ void ShenandoahConcurrentGC::op_final_mark() {
     // Notify JVMTI that the tagmap table will need cleaning.
     JvmtiTagMap::set_needs_cleaning();
 
-    // Release all cached CAS alloc regions before choosing the collection set.
+    // Release CAS alloc regions before choosing the collection set.
     heap->allocator()->release_mutator_alloc_regions_under_lock();
 
     // The collection set is chosen by prepare_regions_and_collection_set(). Additionally, certain parameters have been

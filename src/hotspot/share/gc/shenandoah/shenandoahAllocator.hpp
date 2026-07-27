@@ -33,10 +33,9 @@ typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Mutator>     
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Collector>    ShenandoahCollectorAllocator;
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector> ShenandoahOldCollectorAllocator;
 
-// ShenandoahAllocator is the single entry point for memory allocations. Humongous
-// requests are served directly via ShenandoahFreeSet; all other requests are routed
-// to the appropriate per-partition allocator (mutator, collector, or old-collector).
-// Both paths run under the heap lock.
+// Single entry point for heap allocations. Humongous requests go directly to
+// ShenandoahFreeSet under the heap lock; all others route to a per-partition
+// CAS allocator (mutator, collector, or old-collector).
 class ShenandoahAllocator : public CHeapObj<mtGC> {
   friend class VMStructs;
 private:
@@ -48,36 +47,22 @@ private:
 public:
   ShenandoahAllocator(ShenandoahFreeSet* free_set);
 
-  // Allocate memory from heap for a request. Humongous requests are served directly via
-  // ShenandoahFreeSet; all other requests are routed to the mutator, collector, or
-  // old-collector partition allocator based on request type.
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 
-  // Release the cached alloc region of the collector and old-collector partition allocators
-  // only, leaving the mutator allocator untouched. Call at the evacuation/update-refs boundary
-  // so that regions holding evacuated objects sync their _atomic_top to _top and advance their
-  // update watermark before update-refs iterates the heap, while mutators keep allocating.
+  // Release collector (and old-collector) cached alloc regions at GC phase boundaries.
   void release_collector_alloc_regions();
 
   void release_collector_alloc_regions_under_lock();
 
   void release_mutator_alloc_regions_under_lock();
 
-  // Proactively fill empty collector CAS allocation-region slots and, in generational mode,
-  // old-collector slots from their own partitions. Caller must hold the heap lock. Reserve overflow
-  // remains on the allocation path.
   void reserve_collector_alloc_regions_under_lock();
 
-  // Return the free bytes in the calling thread's mutator alloc region, or max_tlab_size if the
-  // region is empty or too small. Used by unsafe_max_tlab_alloc() for TLAB sizing hints.
   size_t unsafe_max_tlab_alloc(Thread* thread) {
     return _mutator_allocator.unsafe_max_tlab_alloc(thread);
   }
 
-  // Read-time accounting correction term for the given partition's cached alloc region: the
-  // bytes that were pre-charged to the partition's used at reserve time but are not yet
-  // actually consumed (the region's current free()). Returns 0 if no region is cached.
-  // See ShenandoahPartitionAllocator::remnant_bytes.
+  // Pre-charged but unconsumed bytes in cached alloc regions (accounting correction).
   size_t remnant_bytes(ShenandoahFreeSetPartitionId partition) const;
 };
 

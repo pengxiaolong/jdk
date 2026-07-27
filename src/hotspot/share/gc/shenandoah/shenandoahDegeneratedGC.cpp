@@ -230,10 +230,8 @@ void ShenandoahDegenGC::op_degenerated() {
             heap->labs_make_parsable();
           }
 
-          // Must use top(), not plain_top(): entering the switch directly at
-          // _degenerated_evac skips op_prepare_evacuation(), so mutator (and
-          // collector) CAS alloc regions installed during the failed concurrent
-          // evacuation are still active here and their live top is _atomic_top.
+          // Must use top(), not plain_top(): degeneration at _degenerated_evac
+          // skips op_prepare_evacuation(), so CAS alloc regions are still active.
           for (size_t i = 0; i < heap->num_regions(); i++) {
             ShenandoahHeapRegion* r = heap->get_region(i);
             HeapWord* region_top = r->top();
@@ -373,7 +371,7 @@ void ShenandoahDegenGC::op_prepare_evacuation() {
   // STW cleanup weak roots and unload classes
   heap->parallel_cleaning(_generation, false /*full gc*/);
 
-  // Release all cached CAS alloc regions before choosing the collection set.
+  // Release CAS alloc regions before choosing the collection set.
   heap->allocator()->release_mutator_alloc_regions_under_lock();
 
   // Prepare regions and collection set

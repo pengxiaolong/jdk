@@ -407,12 +407,10 @@
                                                                             \
   product(uint, ShenandoahCollectorAllocRegions, 0, EXPERIMENTAL,           \
           "Number of CAS alloc regions striped across each collector "      \
-          "allocator (young Collector and OldCollector) to spread "         \
-          "GC-worker evacuation-allocation contention. Each reserved slot " \
-          "pre-charges its remaining capacity as used, drawn from the "     \
-          "bounded evacuation reserve, so a larger value reduces the "      \
-          "effective reserve; on small heaps this can increase "            \
-          "overflow into the mutator partition.")                           \
+          "allocator (Collector and OldCollector) to spread GC-worker "     \
+          "evacuation contention. Each reserved slot pre-charges its "      \
+          "remaining capacity from the evacuation reserve, so larger "      \
+          "values reduce the effective reserve.")                           \
           range(0, 32)                                                      \
                                                                             \
   product(uintx, ShenandoahOldEvacPercent, 75, EXPERIMENTAL,                \

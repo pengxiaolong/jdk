@@ -710,10 +710,8 @@ private:
   // We want to retry an unsuccessful attempt at allocation until at least a full gc.
   bool should_retry_allocation(size_t original_full_gc_count) const;
 
-  // Cached PLAB::min_size()/max_size() in words, set once in initialize(). PLAB::min_size() is
-  // out-of-line and recomputes from values fixed after JVM init (MinTLABSize, oopDesc::header_size(),
-  // CollectedHeap::lab_alignment_reserve), yet callers include the allocation hot path, so we compute
-  // it once and read these statics instead.
+  // Cached PLAB min/max in words; avoids repeated out-of-line PLAB::min_size()
+  // calls on the allocation hot path. Set once in initialize().
   static size_t _plab_min_size;
   static size_t _plab_max_size;
 

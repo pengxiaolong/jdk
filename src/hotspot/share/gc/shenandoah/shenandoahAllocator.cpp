@@ -30,7 +30,7 @@
 #include "logging/log.hpp"
 #include "runtime/os.hpp"
 
-// Round x to the closest power of 2 value.
+// Round x to the nearest power of 2.
 static uint32_t round_power_of_2(const uint32_t x) {
   assert(x > 0, "Must be positive");
   if (is_power_of_2(x)) {
@@ -42,10 +42,7 @@ static uint32_t round_power_of_2(const uint32_t x) {
   return (x - low < high - x) ? low : high;
 }
 
-// Derive the number of CAS alloc-region stripe slots for the mutator allocator: bounded by CPU
-// count (no benefit beyond available parallelism) and by heap size (too many reserved regions
-// would starve humongous allocation). ShenandoahMutatorAllocRegions overrides with an explicit
-// count when non-zero, still clamped by heap_bound and MAX_ALLOC_REGIONS.
+// Mutator stripe count: min(explicit_or_cpu_bound, heap_bound, MAX_ALLOC_REGIONS).
 static uint32_t mutator_alloc_regions() {
   const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 256, (size_t) 1)));
   if (ShenandoahMutatorAllocRegions != 0) {
@@ -56,9 +53,7 @@ static uint32_t mutator_alloc_regions() {
   return round_down_power_of_2(MIN3(cpu_bound, heap_bound, ShenandoahMutatorAllocator::MAX_ALLOC_REGIONS));
 }
 
-// Derive the number of CAS alloc-region stripe slots for the collector allocator.
-// Similar as mutator_alloc_regions(), but instead of using CPU processor count, ParallelGCThreads
-// is used, and the heap_bound divisor is 512 (collector reserves are smaller).
+// Collector stripe count: like mutator but bounded by ParallelGCThreads and region_count/512.
 static uint32_t collector_alloc_regions() {
   const uint32_t heap_bound = round_power_of_2(checked_cast<uint32_t>(MAX2(ShenandoahHeapRegion::region_count() / 512, (size_t) 1)));
   if (ShenandoahCollectorAllocRegions != 0) {
@@ -97,7 +92,6 @@ HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_ne
     }
   }
 
-  // Route to the appropriate per-partition allocator.
   switch(req.type()) {
     case ShenandoahAllocRequest::_alloc_shared:
     case ShenandoahAllocRequest::_alloc_tlab:

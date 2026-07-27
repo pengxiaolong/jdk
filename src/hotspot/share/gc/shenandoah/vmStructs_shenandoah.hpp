@@ -33,9 +33,7 @@
 #include "gc/shenandoah/shenandoahPartitionAllocator.hpp"
 #include "runtime/atomic.hpp"
 
-// Template instantiations of the per-partition allocator, named so vmStructs/SA can refer to the
-// concrete embedded sub-objects (ShenandoahAllocator holds one of each by value). Mirrors the
-// typedef approach vmStructs_z.hpp uses for ZGC's templated partition types.
+// Concrete typedefs for vmStructs/SA (mirrors vmStructs_z.hpp approach for templated types).
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Mutator>      ShenandoahMutatorPartitionAllocator;
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Collector>    ShenandoahCollectorPartitionAllocator;
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector> ShenandoahOldCollectorPartitionAllocator;

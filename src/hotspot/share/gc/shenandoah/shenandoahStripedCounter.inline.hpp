@@ -35,8 +35,7 @@ inline uint32_t ShenandoahStripedCounter::current_stripe() const {
     return 0u;
   }
   if (!UseShenandoahGC) {
-    // Standalone use (e.g. gtests) without Shenandoah as the active collector: the thread's
-    // ShenandoahThreadLocalData was never constructed, so round_robin_probe() is not available.
+    // Fallback for gtests: ShenandoahThreadLocalData unavailable.
     const uintptr_t t = (uintptr_t) Thread::current();
     return (uint32_t) ((t ^ (t >> 20) ^ (t >> 9)) & _stripe_mask);
   }

@@ -832,8 +832,7 @@ void ShenandoahScanRememberedTask::do_work(uint worker_id) {
       HeapWord* end_of_range = region->bottom() + assignment._chunk_offset + assignment._chunk_size;
 
       // During concurrent mark, region->top() equals TAMS with respect to the current young-gen pass.
-      // Load top once: a second relaxed load could observe a larger value and clamp past the bound
-      // the comparison approved.
+      // Load top once to avoid TOCTOU with concurrent allocation.
       HeapWord* const region_top = region->top_relaxed();
       if (end_of_range > region_top) {
         end_of_range = region_top;

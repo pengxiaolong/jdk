@@ -640,14 +640,9 @@ public:
   // Returns nullptr if no region can be stolen. Caller must hold the heap lock.
   ShenandoahHeapRegion* steal_from_mutator(ShenandoahFreeSetPartitionId target_partition);
 
-  // Reserve up to regions_to_reserve regions from PARTITION, each with at least min_free_words of
-  // allocatable capacity, for use as striped CAS alloc regions. Each reserved region is prepared
-  // (affiliated/made-regular as needed) and retired from the partition (its remaining capacity
-  // pre-charged to used, exactly as retire_region does), then returned in reserved[]. Unlike calling
-  // find_region_for_alloc + retire_region per region, the partition total accounting (used,
-  // affiliated/empty region counts) is recomputed ONCE after the whole batch, so intermediate
-  // states never trip the affiliated>=used / interval-bounds invariants. Returns the number of
-  // regions reserved (0..regions_to_reserve). Caller must hold the heap lock.
+  // Reserve up to regions_to_reserve regions from PARTITION for striped CAS allocation, each with
+  // at least min_free_words free. Regions are retired (pre-charged) and partition totals recomputed
+  // once for the whole batch. Returns the count actually reserved. Caller must hold the heap lock.
   template<ShenandoahFreeSetPartitionId PARTITION>
   int reserve_alloc_regions(int regions_to_reserve, size_t min_free_words, ShenandoahHeapRegion** reserved);
 
@@ -668,11 +663,8 @@ public:
   // Saturating precharged_used - remnant_bytes; see the comment on the net accessors in the .cpp.
   static size_t net_used(size_t precharged_used, size_t remnant_bytes);
 
-  // Raw (uncorrected) used totals: the stored partition used including the full pre-charge of any
-  // active CAS alloc region, WITHOUT subtracting the still-unconsumed remnant. Unlike the corrected
-  // accessors (young_used/old_used/global_used) these do not read the live _atomic_top, so they are
-  // stable under the heap lock even while mutators allocate lock-free. Used by the concurrent
-  // verify_before_rebuilding_free_set, where the correction term would otherwise race.
+  // Raw used totals including the full CAS alloc-region pre-charge (no remnant subtraction).
+  // Stable under heap lock while mutators allocate; used by verify_before_rebuilding_free_set.
   size_t young_used_raw() const { return _total_young_used; }
   size_t old_used_raw() const   { return _total_old_used; }
   size_t global_used_raw() const { return _total_global_used; }

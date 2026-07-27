@@ -42,9 +42,7 @@ class ShenandoahStripedCounter : public CHeapObj<mtGC> {
   typedef PaddedEnd<Atomic<size_t>> PaddedCounter;
 
   PaddedCounter* _stripes;   // _num_stripes entries
-  // Number of stripes: a power of two, rounded down from the CPU count. Keeping it a power of two
-  // lets current_stripe() map a thread's raw round-robin ticket into range with a mask
-  // (& _stripe_mask) instead of a modulo on the hot path.
+  // Power-of-two stripe count (rounded down from CPU count) for bitmask stripe selection.
   uint32_t const _num_stripes;
   uint32_t const _stripe_mask; // _num_stripes - 1
   uint32_t const _log_num_stripes;

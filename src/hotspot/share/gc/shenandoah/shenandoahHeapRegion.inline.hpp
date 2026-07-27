@@ -78,15 +78,11 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
   const size_t size = req.size();
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
-  // Relaxed read: the value is only the expected operand of try_allocate's release CAS, which
-  // validates it. See atomic_top_relaxed().
   HeapWord* obj = atomic_top_relaxed();
   if (obj == nullptr) {
-    // _atomic_top has been updated to nullptr, it is not allowed to do atomic alloc
     return nullptr;
   }
 
-  // The loop always returns from within its body.
   for (;;) {
     const size_t free_words = pointer_delta(end(), obj);
     if (free_words >= size) {
@@ -95,7 +91,6 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
         return obj;
       }
       if (obj == nullptr) {
-        // _atomic_top has been updated to nullptr, it is not allowed to retry atomic alloc
         return nullptr;
       }
     } else {
@@ -107,14 +102,11 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
 HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size) {
   assert(req.is_lab_alloc(), "Only lab alloc");
 
-  // Relaxed read: the value is only the expected operand of try_allocate's release CAS, which
-  // validates it. See atomic_top_relaxed().
   HeapWord* obj = atomic_top_relaxed();
   if (obj == nullptr) {
-    // _atomic_top has been updated to nullptr, it is not allowed to do atomic alloc
     return nullptr;
   }
-  // The loop always returns from within its body.
+
   for (;;) {
     const size_t free_words = pointer_delta(end(), obj);
     const size_t adjusted_size = MIN2(req.size(), align_down(free_words, MinObjAlignment));
@@ -125,7 +117,6 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
       }
 
       if (obj == nullptr) {
-        // _atomic_top has been updated to nullptr, it is not allowed to retry atomic alloc
         return nullptr;
       }
     } else {
@@ -147,8 +138,6 @@ bool ShenandoahHeapRegion::try_allocate(HeapWord* const obj, size_t const size, 
 }
 
 inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t size) {
-  // Plain (heap-locked) allocation path. Only need to update alloc metadata for lab alloc, shared
-  // alloc is counted implicitly by used() minus these three (see get_shared_allocs()).
   shenandoah_assert_heaplocked_or_safepoint();
   switch (req.type()) {
     case ShenandoahAllocRequest::_alloc_tlab:
@@ -289,14 +278,10 @@ inline bool ShenandoahHeapRegion::unset_active_alloc_region() {
     if (prior_atomic_top == current_atomic_top) {
       success = true;
       if (current_atomic_top > top_before_sync) {
-        // reset age if there was any allocation in the region after it's reserved as alloc region.
         reset_age();
         if (UseTLAB) {
-          // Fold this activation's growth into the lifetime lab/shared totals. shared_words is this
-          // activation's running total of shared (non-LAB) CAS allocations; the remainder of the
-          // growth is LAB words, attributed by role (Mutator/Collector/OldCollector), determined
-          // from affiliation() and is_gc_alloc_region() while both are still valid (this runs
-          // before either is cleared).
+          // Fold this activation's growth into lab/shared totals. Must run before
+          // affiliation or is_gc_alloc_region is cleared.
           const size_t growth_words = pointer_delta(current_atomic_top, top_before_sync);
           const size_t shared_words = _shared_atomic_allocs.exchange(0);
           size_t* lab_allocs = is_young() ? (is_gc_alloc_region() ? &_gclab_allocs : &_tlab_allocs)
@@ -304,9 +289,8 @@ inline bool ShenandoahHeapRegion::unset_active_alloc_region() {
           const size_t lab_words = growth_words > shared_words ? growth_words - shared_words : 0;
           *lab_allocs += lab_words;
           if (shared_words > growth_words) {
-            log_debug(gc, free)("Region %zu: shared_atomic_allocs (%zu words) exceeded this "
-                                "activation's growth (%zu words) at retirement; a concurrent "
-                                "lock-free bump likely raced this fold (see unset_active_alloc_region)",
+            log_debug(gc, free)("Region %zu: shared_atomic_allocs (%zu words) exceeded "
+                                "activation growth (%zu words) at retirement",
                                 index(), shared_words, growth_words);
           }
         }

@@ -691,8 +691,7 @@ void ShenandoahOldGeneration::update_card_table() {
       // the objects in the region when it was promoted. We record TEAS for such a region
       // when the in-place-promotion is completed. Such a region may be used for additional
       // promotions in the same cycle it was itself promoted.
-      // Load top once: a second relaxed load could observe a larger value than the one
-      // the comparison approved.
+      // Load top once to avoid TOCTOU with concurrent allocation.
       HeapWord* const region_top = region->top_relaxed();
       if (region_top > region->get_top_at_evac_start()) {
         _card_scan->update_card_table(region->get_top_at_evac_start(), region_top);

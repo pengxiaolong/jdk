@@ -93,9 +93,7 @@ private:
   Atomic<HeapWord*> _invisible_root;
   Atomic<size_t> _invisible_root_word_size;
 
-  // Raw per-thread round-robin ticket, assigned lazily on first use. Consumers independently map
-  // this stable value into their own slot/stripe range, so one assignment can serve arrays with
-  // different sizes without storing a consumer-specific modulo result.
+  // Stable per-thread round-robin ticket; consumers mask it into their own range independently.
   static Atomic<uint32_t> _next_round_robin_probe;
   uint32_t _round_robin_probe;
   bool _round_robin_probe_initialized;
@@ -194,9 +192,7 @@ public:
     data(thread)->_gclab_size = v;
   }
 
-  // Return this thread's stable raw round-robin ticket, assigning it on first use. Callers map the
-  // ticket into their own range; assignment is owner-thread-only, so the TLS fields need not be
-  // atomic. The global sequence only requires uniqueness of the fetched value, not ordering.
+  // Lazy-assigned stable round-robin ticket. Owner-thread-only, so TLS fields need not be atomic.
   static uint32_t round_robin_probe(Thread* thread) {
     assert(thread == Thread::current(), "Only the owner thread may assign its probe");
     ShenandoahThreadLocalData* d = data(thread);

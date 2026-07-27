@@ -356,8 +356,7 @@ ShenandoahScanRemembered::process_region_slice(ShenandoahHeapRegion *region, siz
     // collection.  Here, we need to scan up to TAMS for most recently initiated young-gen collection.
     // Since all LABs are retired at init mark, and since replacement LABs are allocated lazily, and since no
     // promotions occur until evacuation phase, TAMS for most recent young-gen is same as top().
-    // Load top once: a second relaxed load could observe a larger value and clamp past the bound
-    // the comparison approved.
+    // Load top once to avoid TOCTOU with concurrent allocation.
     HeapWord* const region_top = region->top_relaxed();
     if (end_of_range > region_top) {
       end_of_range = region_top;

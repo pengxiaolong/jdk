@@ -1035,9 +1035,8 @@ inline bool ShenandoahHeap::should_retry_allocation(size_t original_full_gc_coun
 template<bool IS_MUTATOR>
 HeapWord* ShenandoahHeap::allocate_memory_work(ShenandoahAllocRequest& req, bool& in_new_region) {
   assert(IS_MUTATOR == req.is_mutator_alloc(), "Sanity");
-  // Reserve the promotion budget up front so it is enforced atomically without the heap lock.
-  // If the reserve is exhausted, deny the promotion rather than overshoot it; the reservation
-  // is refunded below if the allocation itself fails.
+  // Reserve promotion budget atomically before the heap-lock allocation;
+  // refunded below if the allocation itself fails.
   if (!IS_MUTATOR && req.is_promotion() && !old_generation()->try_expend_promoted(req.size() << LogHeapWordSize)) {
     return nullptr;
   }

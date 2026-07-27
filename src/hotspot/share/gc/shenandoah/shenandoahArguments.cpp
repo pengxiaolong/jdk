@@ -190,8 +190,7 @@ void ShenandoahArguments::initialize() {
       err_msg("GCCardSizeInBytes ( %u ) must be >= %u\n", GCCardSizeInBytes, ShenandoahMinCardSizeInBytes));
   }
 
-  // CAS alloc-region stripe counts are used as bitmask sizes (see ShenandoahPartitionAllocator),
-  // so a non-zero override must be a power of 2. 0 means "derive automatically".
+  // Non-zero stripe counts must be a power of 2 (used as bitmask). 0 = derive automatically.
   if (ShenandoahMutatorAllocRegions != 0 && !is_power_of_2((uint) ShenandoahMutatorAllocRegions)) {
     vm_exit_during_initialization(
       "Shenandoah expects ShenandoahMutatorAllocRegions to be a power of 2, check -XX:ShenandoahMutatorAllocRegions=#");

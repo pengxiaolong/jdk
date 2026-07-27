@@ -959,9 +959,8 @@ public:
     // be promoted.
     if (r->is_young() && r->is_active()) {
       HeapWord *tams = _ctx->top_at_mark_start(r);
-      // Must use top(), not plain_top(): this closure runs at the final-update-refs
-      // safepoint and concurrently in abbreviated cycles, and in both cases active
-      // mutator CAS alloc regions (young + active) can be encountered.
+      // Must use top(), not plain_top(): active CAS alloc regions can be
+      // encountered here (final-update-refs safepoint or abbreviated cycles).
       HeapWord *top = r->top();
 
       // Allocations move the watermark when top moves.  However, compacting

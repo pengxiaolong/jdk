@@ -367,11 +367,8 @@ void ShenandoahHeapRegion::reset_alloc_metadata() {
 }
 
 size_t ShenandoahHeapRegion::get_shared_allocs() const {
-  // Saturating subtraction: used() reads the live _atomic_top (acquire), while the per-type lab
-  // counters are only folded in at retirement (see unset_active_alloc_region()), which can lag a
-  // concurrent lock-free allocator's top advance. This can momentarily make the lab total exceed
-  // used(). Clamp to 0 so the unsigned subtraction never underflows to a near-SIZE_MAX value and
-  // corrupts jstat/perfdata.
+  // Saturating: lab counters lag top during active CAS allocation, so lab total
+  // can momentarily exceed used(). Clamp to avoid unsigned underflow.
   size_t lab_allocs = (_tlab_allocs + _gclab_allocs + _plab_allocs) * HeapWordSize;
   size_t u = used();
   return u > lab_allocs ? u - lab_allocs : 0;
