@@ -405,13 +405,12 @@ public:
   inline HeapWord* allocate_fill(size_t word_size);
 
   // Allocate object with CAS, return nullptr if full or not enough space for the req
-  inline HeapWord* allocate_atomic(const ShenandoahAllocRequest &req);
+  template <bool HEAP_LOCKED>
+  ALWAYSINLINE HeapWord* allocate_atomic(ShenandoahAllocRequest &req, bool& ready_to_replenish);
 
   // Allocate lab with CAS, return nullptr if full or not enough space for the req
-  inline HeapWord* allocate_lab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size);
-
-  // CAS-allocate the object; prior_atomic_top always receives the prior value of _atomic_top.
-  inline bool try_allocate(HeapWord* const obj, size_t const size, HeapWord* &prior_atomic_top);
+  template <bool HEAP_LOCKED>
+  ALWAYSINLINE HeapWord* allocate_lab_atomic(ShenandoahAllocRequest &req, bool& ready_to_replenish);
 
   inline void clear_live_data();
   void set_live_data(size_t s);

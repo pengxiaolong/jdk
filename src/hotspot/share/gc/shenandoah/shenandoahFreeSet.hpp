@@ -644,7 +644,7 @@ public:
   // at least min_free_words free. Regions are retired (pre-charged) and partition totals recomputed
   // once for the whole batch. Returns the count actually reserved. Caller must hold the heap lock.
   template<ShenandoahFreeSetPartitionId PARTITION>
-  int reserve_alloc_regions(int regions_to_reserve, size_t min_free_words, ShenandoahHeapRegion** reserved);
+  uint32_t reserve_alloc_regions(uint32_t regions_to_reserve, size_t min_free_words, ShenandoahHeapRegion** reserved);
 
   // Allocate contiguous regions for humongous objects. Caller must hold heap lock.
   HeapWord* allocate_contiguous(ShenandoahAllocRequest& req, bool is_humongous);
