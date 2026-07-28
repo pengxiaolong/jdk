@@ -175,7 +175,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
 
     // Batch replenish empty/exhausted slots, then retry.
     uint32_t slots_ready_to_replenish = 0;
-    const uint32_t replenished = replenish_alloc_regions<true>(slots_ready_to_replenish, &req, &obj);
+    const uint32_t replenished = replenish_alloc_regions<true>(slots_ready_to_replenish, &req, &obj, &in_new_region);
     if (obj != nullptr) {
       return obj;
     }
