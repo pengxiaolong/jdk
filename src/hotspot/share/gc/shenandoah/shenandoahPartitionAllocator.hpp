@@ -87,8 +87,12 @@ public:
   // Must be called before free set rebuild (invalidates cached regions).
   void release_alloc_regions();
 
+  // Replenish alloc regions, return number of replenished alloc region slots.
+  // Satisfy allocation request before replenishing a alloc region slot when it is called
+  // from allocation path with pending allocation request.
   template<bool HAS_PENDING_ALLOC_REQ = false>
-  uint32_t replenish_alloc_regions(uint32_t& empty_alloc_region_count, ShenandoahAllocRequest* req = nullptr, HeapWord** obj = nullptr, bool* in_new_region = nullptr);
+  uint32_t replenish_alloc_regions(uint32_t& empty_alloc_region_count,
+    ShenandoahAllocRequest* req = nullptr, HeapWord** obj = nullptr, bool* in_new_region = nullptr);
 
   // Pre-fill empty stripe slots from the partition. Caller must hold heap lock.
   void reserve_alloc_regions();
