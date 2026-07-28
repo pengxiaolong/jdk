@@ -84,19 +84,22 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
   }
 
   for (;;) {
-    const size_t free_words = pointer_delta(end(), obj);
-    if (free_words >= size) {
-      if (try_allocate(obj /*value*/, size, obj /*reference*/)) {
-        adjust_alloc_metadata_atomic(req, size);
-        return obj;
-      }
-      if (obj == nullptr) {
-        return nullptr;
-      }
-    } else {
+    HeapWord* new_top = obj + size;
+    if (new_top > end()) {
+      return nullptr; // region is full, bail out
+    }
+    HeapWord* prev_top = _atomic_top.compare_exchange(obj, new_top, memory_order_relaxed);
+    if (prev_top == obj) {
+      // success
+      adjust_alloc_metadata_atomic(req, size);
+      return obj;
+    }
+
+    obj = prev_top;
+    if (obj == end() || obj == nullptr) {
       return nullptr;
     }
-    SpinPause(); // Contended
+    SpinPause(); // Contended, retry after spin pause
   }
 }
 
