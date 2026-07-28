@@ -1606,7 +1606,7 @@ void ShenandoahHeap::gclabs_retire(bool resize) {
 
 // Returns size in bytes
 size_t ShenandoahHeap::unsafe_max_tlab_alloc() const {
-  return ShenandoahHeapRegion::max_tlab_size_bytes();
+  return _allocator->unsafe_max_tlab_alloc(Thread::current());
 }
 
 size_t ShenandoahHeap::max_tlab_size() const {
