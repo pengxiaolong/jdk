@@ -76,13 +76,12 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
   for (uint32_t n = 0; n < count; n++) {
     ShenandoahHeapRegion* r = HEAP_LOCKED ? _alloc_regions[i].load_relaxed() : _alloc_regions[i].load_acquire();
     if (r != nullptr) {
-      HeapWord* obj = try_atomic_allocate_in(r, req);
+      HeapWord* obj = try_atomic_allocate_in(r, req, in_new_region);
       if (HEAP_LOCKED &&
           (r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
         uninstall_alloc_region(i, r);
-          }
+      }
       if (obj != nullptr) {
-        in_new_region = false;
         return obj;
       }
     }
@@ -176,12 +175,9 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
 
     // Batch replenish empty/exhausted slots, then retry.
     uint32_t slots_ready_to_replenish = 0;
-    const uint32_t replenished = replenish_alloc_regions(slots_ready_to_replenish);
-    if (replenished > 0) {
-      obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot, _alloc_region_count);
-      if (obj != nullptr) {
-        return obj;
-      }
+    const uint32_t replenished = replenish_alloc_regions<true>(slots_ready_to_replenish, &req, &obj);
+    if (obj != nullptr) {
+      return obj;
     }
 
     if constexpr  (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
@@ -273,7 +269,8 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
 
 template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(ShenandoahHeapRegion* r,
-                                                                          ShenandoahAllocRequest& req) {
+                                                                          ShenandoahAllocRequest& req,
+                                                                          bool &in_new_region) {
   size_t actual_size;
   HeapWord* obj = nullptr;
   if (req.is_lab_alloc()) {
@@ -285,19 +282,26 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(Shenan
 
   if (obj != nullptr) {
     req.set_actual_size(actual_size);
+    if (obj == r->bottom()) {
+      in_new_region = true;
+    }
   }
   return obj;
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32_t& empty_slots_count) {
+template<bool HAS_PENDING_ALLOC_REQ>
+uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32_t& empty_slots_count,
+  ShenandoahAllocRequest* req, HeapWord** obj, bool* in_new_region) {
   shenandoah_assert_heaplocked();
+  assert((HAS_PENDING_ALLOC_REQ && req != nullptr && obj != nullptr && in_new_region != nullptr) ||
+         (!HAS_PENDING_ALLOC_REQ && req == nullptr && obj == nullptr && in_new_region == nullptr), "Sanity");
 
   uint32_t empty_slots[MAX_ALLOC_REGIONS];
   empty_slots_count = 0u;
   // Prepare exhausted slots for replenishment.
   for (uint32_t i = 0; i < _alloc_region_count; i++) {
-    ShenandoahHeapRegion* r = _alloc_regions[i].load_relaxed();
+    ShenandoahHeapRegion* const r = _alloc_regions[i].load_relaxed();
     if (r == nullptr) {
       empty_slots[empty_slots_count++] = i;
     } else if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
@@ -319,15 +323,41 @@ uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32
     return  0;
   }
 
+  uint32_t replenished_count = 0u;
   for (uint32_t i = 0; i < reserved_count; i++) {
+    ShenandoahHeapRegion* const r = reserved[i];
     const uint32_t slot = empty_slots[i];
-    assert(_alloc_regions[slot].load_relaxed() == nullptr, "Slot must remain empty under the heap lock");
-    assert(reserved[i]->is_atomic_alloc_region(), "Reserved region must be active before publication");
-    _alloc_regions[slot].release_store(reserved[i]);
-  }
-  _replenish_epoch++;
 
-  return reserved_count;
+    assert(_alloc_regions[slot].load_relaxed() == nullptr, "Slot must remain empty under the heap lock");
+    assert(r->is_atomic_alloc_region(), "Reserved region must be active before publication");
+
+    if constexpr (HAS_PENDING_ALLOC_REQ) {
+      if (*obj == nullptr) {
+        *obj = try_atomic_allocate_in(r, *req, *in_new_region);
+        if (*obj == nullptr || (r->free_relaxed() >> LogHeapWordSize) >= ShenandoahHeap::plab_min_size()) {
+          _alloc_regions[slot].release_store(reserved[i]);
+          replenished_count++;
+        } else {
+          assert((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size(), "Must be");
+          r->unset_active_alloc_region();
+          if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
+            r->set_update_watermark(r->plain_top());
+            r->set_gc_alloc_region(false);
+          }
+        }
+      } else {
+        _alloc_regions[slot].release_store(r);
+        replenished_count++;
+      }
+    } else {
+      _alloc_regions[slot].release_store(r);
+      replenished_count++;
+    }
+  }
+  if (replenished_count > 0) {
+    _replenish_epoch++;
+  }
+  return replenished_count;
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>

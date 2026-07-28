@@ -73,7 +73,7 @@ private:
                         ShenandoahAllocRequest& req,
                         bool& retired_after_alloc);
 
-  HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req);
+  HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& in_new_region);
 
   void release_alloc_region(uint32_t slot);
 
@@ -87,7 +87,8 @@ public:
   // Must be called before free set rebuild (invalidates cached regions).
   void release_alloc_regions();
 
-  uint32_t replenish_alloc_regions(uint32_t& empty_alloc_region_count);
+  template<bool HAS_PENDING_ALLOC_REQ = false>
+  uint32_t replenish_alloc_regions(uint32_t& empty_alloc_region_count, ShenandoahAllocRequest* req = nullptr, HeapWord** obj = nullptr, bool* in_new_region = nullptr);
 
   // Pre-fill empty stripe slots from the partition. Caller must hold heap lock.
   void reserve_alloc_regions();
