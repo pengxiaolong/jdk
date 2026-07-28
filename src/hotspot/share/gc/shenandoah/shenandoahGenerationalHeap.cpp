@@ -68,7 +68,7 @@ protected:
 
 // Returns size in bytes
 size_t ShenandoahGenerationalHeap::unsafe_max_tlab_alloc() const {
-  return allocator()->unsafe_max_tlab_alloc(Thread::current());
+  return ShenandoahHeapRegion::max_tlab_size_bytes();
 }
 
 ShenandoahGenerationalHeap::ShenandoahGenerationalHeap(ShenandoahCollectorPolicy* policy) :
