@@ -58,20 +58,19 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocReque
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
   HeapWord* obj = plain_top();
-  if (pointer_delta(end(), obj) >= size) {
+  HeapWord* new_top = obj + size;
+  if (new_top <= end()) {
     make_regular_allocation(req.affiliation());
     adjust_alloc_metadata(req, size);
 
-    HeapWord* new_top = obj + size;
     set_top(new_top);
 
     assert(is_object_aligned(new_top), "new top breaks alignment: " PTR_FORMAT, p2i(new_top));
     assert(is_object_aligned(obj),     "obj is not aligned: "       PTR_FORMAT, p2i(obj));
 
     return obj;
-  } else {
-    return nullptr;
   }
+  return nullptr;
 }
 
 HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& req) {
