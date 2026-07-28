@@ -96,6 +96,7 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& re
     } else {
       return nullptr;
     }
+    SpinPause(); // Contended
   }
 }
 
@@ -124,6 +125,7 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest
                           " because min_size() is %zu", req.size(), index(), adjusted_size, req.min_size());
       return nullptr;
     }
+    SpinPause(); // Contended
   }
 }
 
