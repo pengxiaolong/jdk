@@ -256,7 +256,7 @@ template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(ShenandoahHeapRegion* r,
                                                                           ShenandoahAllocRequest& req,
                                                                           bool &in_new_region) {
-  HeapWord* obj = obj = r->allocate_atomic(req);
+  HeapWord* obj = r->allocate_atomic(req);
   if (obj != nullptr) {
     req.set_actual_size(req.size());
     if (obj == r->bottom()) {
