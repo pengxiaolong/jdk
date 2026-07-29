@@ -160,8 +160,7 @@ inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocReq
 }
 
 inline void ShenandoahHeapRegion::adjust_alloc_metadata_atomic(const ShenandoahAllocRequest &req, size_t size) {
-  assert(!req.is_lab_alloc(), "Must not be lab alloc");
-  if (UseTLAB) {
+  if (UseTLAB && !req.is_lab_alloc()) {
     _shared_atomic_allocs.add_then_fetch(size, memory_order_relaxed);
   }
 }
