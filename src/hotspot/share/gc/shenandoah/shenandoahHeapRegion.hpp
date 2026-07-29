@@ -405,7 +405,8 @@ public:
   inline HeapWord* allocate_fill(size_t word_size);
 
   // Allocate object with CAS, return nullptr if full or not enough space for the req
-  inline HeapWord* allocate_atomic(const ShenandoahAllocRequest &req);
+  template <bool HEAP_LOCKED>
+  ALWAYSINLINE HeapWord* allocate_atomic(const ShenandoahAllocRequest &req, bool& ready_to_replenish);
 
   // Allocate lab with CAS, return nullptr if full or not enough space for the req
   inline HeapWord* allocate_lab_atomic(const ShenandoahAllocRequest &req, size_t &actual_size);

@@ -73,33 +73,45 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocReque
   return nullptr;
 }
 
-HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& req) {
+template <bool HEAP_LOCKED>
+HeapWord* ShenandoahHeapRegion::allocate_atomic(const ShenandoahAllocRequest& req, bool& ready_to_replenish) {
+  if constexpr (HEAP_LOCKED) {
+    shenandoah_assert_heaplocked();
+  }
   const size_t size = req.size();
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
   HeapWord* obj = atomic_top_relaxed();
-  if (obj == nullptr) {
-    return nullptr;
-  }
-
-  for (;;) {
+  while (true) {
+    if constexpr (!HEAP_LOCKED) {
+      // the _atomic_top has been set to nullptr by other thread holding heap lock,
+      // no more alloc is allowed in this region
+      if (obj == nullptr) {
+        return nullptr;
+      }
+    }
     HeapWord* new_top = obj + size;
     if (new_top > end()) {
-      return nullptr; // region is full, bail out
+      obj = nullptr;
+      break; // region is full, bail out
     }
     HeapWord* prev_top = _atomic_top.compare_exchange(obj, new_top, memory_order_relaxed);
     if (prev_top == obj) {
       // success
       adjust_alloc_metadata_atomic(req, size);
-      return obj;
+      ready_to_replenish = pointer_delta(end(), new_top) < ShenandoahHeap::plab_min_size();
+      break;
     }
-
+    //Retry
     obj = prev_top;
-    if (obj == end() || obj == nullptr) {
-      return nullptr;
-    }
     SpinPause(); // Contended, retry after spin pause
   }
+  if (obj == nullptr) {
+    HeapWord* cur_top = atomic_top_relaxed();
+    ready_to_replenish = cur_top != nullptr &&
+                         pointer_delta(end(), cur_top) < ShenandoahHeap::plab_min_size();
+  }
+  return obj;
 }
 
 HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(const ShenandoahAllocRequest& req, size_t &actual_size) {

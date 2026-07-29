@@ -64,7 +64,7 @@ private:
   // Scan slots for remaining capacity starting at start_slot.
   template<bool HEAP_LOCKED>
   HeapWord* try_allocate_in_alloc_regions(ShenandoahAllocRequest& req, bool& in_new_region,
-                                          uint32_t start_slot, uint32_t count);
+                                          uint32_t start_slot, uint32_t count, uint32_t& slots_ready_to_replenish);
 
   void uninstall_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant);
   bool try_install_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
@@ -73,7 +73,8 @@ private:
                         ShenandoahAllocRequest& req,
                         bool& retired_after_alloc);
 
-  HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& in_new_region);
+  template<bool HEAP_LOCKED>
+  HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& in_new_region, bool& ready_to_replenish);
 
   void release_alloc_region(uint32_t slot);
 
