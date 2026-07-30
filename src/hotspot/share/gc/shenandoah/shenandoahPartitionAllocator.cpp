@@ -199,7 +199,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     ShenandoahHeapRegion* alloc_region = nullptr;
     if (slots_ready_to_replenish == 0 || replenished > 0) {
       // All slots still have capacity but none could satisfy this request — try a fresh region.
-      alloc_region = _free_set->find_region_for_alloc<PARTITION>(req.size(), in_new_region);
+      alloc_region = _free_set->find_region_for_alloc<PARTITION>((req.is_lab_alloc() ? req.min_size() : req.size()), in_new_region);
     }
     if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       if (alloc_region == nullptr && ShenandoahEvacReserveOverflow) {
@@ -232,12 +232,26 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
                                                                bool& retired_after_alloc) {
   assert(!r->is_atomic_alloc_region(), "Must not be an atomic alloc region.");
   assert(!retired_after_alloc, "Initial value must be false");
-  assert(r->free_relaxed() >= req.size(), "The region must have enough free");
 
-  HeapWord* result = r->allocate(req.size(), req);
-  req.set_actual_size(req.size());
+  HeapWord* result = nullptr;
+  if (req.is_lab_alloc()) {
+    size_t adjusted_size = req.size();
+    size_t free = align_down((r->free_relaxed() >> LogHeapWordSize), MinObjAlignment);
+    if (adjusted_size > free) {
+      adjusted_size = free;
+    }
+    assert(adjusted_size >= req.min_size(),
+           "Caller must ensure region has at least min_size capacity: free=%zu, min_size=%zu",
+           free, req.min_size());
+    result = r->allocate(adjusted_size, req);
+    req.set_actual_size(adjusted_size);
+  } else {
+    size_t size = req.size();
+    result = r->allocate(size, req);
+    req.set_actual_size(size);
+  }
   assert(result != nullptr, "Allocation must succeed, region free: %zu, request minimal size: %zu",
-    r->free_relaxed(), req.size());
+    r->free_relaxed(), req.is_lab_alloc() ? req.min_size() : req.size());
 
   if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
     assert(req.is_young(), "Mutator allocations always come from young generation.");
@@ -267,12 +281,14 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(Shenan
                                                                           ShenandoahAllocRequest& req,
                                                                           bool &in_new_region,
                                                                           bool& ready_to_replenish) {
-  HeapWord* obj = r->allocate_atomic<HEAP_LOCKED>(req, ready_to_replenish);
-  if (obj != nullptr) {
-    req.set_actual_size(req.size());
-    if (obj == r->bottom()) {
-      in_new_region = true;
-    }
+  HeapWord* obj = nullptr;
+  if (req.is_lab_alloc()) {
+    obj = r->allocate_lab_atomic<HEAP_LOCKED>(req, ready_to_replenish);
+  } else {
+    obj = r->allocate_atomic<HEAP_LOCKED>(req, ready_to_replenish);
+  }
+  if (obj != nullptr && obj == r->bottom()) {
+    in_new_region = true;
   }
   return obj;
 }
