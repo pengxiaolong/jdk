@@ -109,6 +109,8 @@ class ShenandoahAllocRate {
   static constexpr size_t ALLOC_SAMPLE_PORTION = 128;
   static constexpr size_t ALLOC_SAMPLE_MIN = M;
   static constexpr size_t ALLOC_SAMPLE_MAX = G;
+  static constexpr size_t ALLOC_MIN_PER_STRIPE_SAMPLE_THRESHOLD = 256 * K;
+
 
   PaddedMonitor _sample_lock;
   ShenandoahStripedCounter _unsampled;
