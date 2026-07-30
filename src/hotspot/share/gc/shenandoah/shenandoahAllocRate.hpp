@@ -196,12 +196,21 @@ private:
   }
 
   // Whether the unsampled bytes are still below the sampling floor. Must be called under the sample
-  // lock: drains only happen under the lock, so reading the live stripe value and sum() here filters
-  // out false positives from a concurrent drain that already reset the counter.
+  // lock, since drains only happen under the lock. `striped_unsampled` is the calling stripe's value
+  // captured by allocated() before the lock was taken.
   bool unsampled_below_floor(size_t minimum_sample_size, size_t striped_unsampled) const {
     assert(_sample_lock.owned_by_self(), "Caller must hold lock");
-    return (_unsampled.num_stripes() > 1 && _unsampled.current_stripe_value() < striped_unsampled) ||
-           _unsampled.sum() < minimum_sample_size;
+    const size_t cur_striped_unsampled = _unsampled.current_stripe_value();
+    if (cur_striped_unsampled >= minimum_sample_size) {
+      // This stripe alone clears the floor with live, undrained bytes; sample without summing.
+      return false;
+    }
+    if (_unsampled.num_stripes() == 1 || cur_striped_unsampled < striped_unsampled) {
+      // Single stripe: sum() == cur, genuinely below the floor. Multi-stripe: the live value
+      // dropping below what we captured means a concurrent drain already sampled our bytes; skip.
+      return true;
+    }
+    return _unsampled.sum() < minimum_sample_size;
   }
 
   // Record the sample under the sample lock
