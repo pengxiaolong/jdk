@@ -48,11 +48,11 @@ typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector>
   nonstatic_field(ShenandoahAllocator, _collector_allocator,           ShenandoahCollectorPartitionAllocator)     \
   nonstatic_field(ShenandoahAllocator, _old_collector_allocator,       ShenandoahOldCollectorPartitionAllocator)  \
   nonstatic_field(ShenandoahMutatorPartitionAllocator,      _alloc_region_count, const uint)                      \
-  nonstatic_field(ShenandoahMutatorPartitionAllocator,      _alloc_regions[0],   Atomic<ShenandoahHeapRegion*>)   \
+  nonstatic_field(ShenandoahMutatorPartitionAllocator,      _alloc_regions,      ShenandoahPaddedAllocRegion*)     \
   nonstatic_field(ShenandoahCollectorPartitionAllocator,    _alloc_region_count, const uint)                      \
-  nonstatic_field(ShenandoahCollectorPartitionAllocator,    _alloc_regions[0],   Atomic<ShenandoahHeapRegion*>)   \
+  nonstatic_field(ShenandoahCollectorPartitionAllocator,    _alloc_regions,      ShenandoahPaddedAllocRegion*)     \
   nonstatic_field(ShenandoahOldCollectorPartitionAllocator, _alloc_region_count, const uint)                      \
-  nonstatic_field(ShenandoahOldCollectorPartitionAllocator, _alloc_regions[0],   Atomic<ShenandoahHeapRegion*>)   \
+  nonstatic_field(ShenandoahOldCollectorPartitionAllocator, _alloc_regions,      ShenandoahPaddedAllocRegion*)     \
   volatile_nonstatic_field(ShenandoahHeap, _committed,                 Atomic<size_t>)                            \
   static_field(ShenandoahHeapRegion, RegionSizeBytes,                  size_t)                                    \
   static_field(ShenandoahHeapRegion, RegionSizeBytesShift,             size_t)                                    \
@@ -86,6 +86,8 @@ typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector>
   declare_toplevel_type(ShenandoahHeapRegion*)                                \
   declare_toplevel_type(Atomic<ShenandoahHeapRegion::RegionState>)            \
   declare_toplevel_type(Atomic<ShenandoahHeapRegion*>)                        \
+  declare_toplevel_type(ShenandoahPaddedAllocRegion)                          \
+  declare_toplevel_type(ShenandoahPaddedAllocRegion*)                         \
   declare_toplevel_type(ShenandoahFreeSet)                                    \
   declare_toplevel_type(ShenandoahFreeSet*)                                   \
   declare_toplevel_type(ShenandoahAllocator)                                  \

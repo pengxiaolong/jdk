@@ -32,6 +32,7 @@
 #include "gc/shenandoah/shenandoahPartitionAllocator.hpp"
 #include "gc/shenandoah/shenandoahThreadLocalData.hpp"
 #include "logging/log.hpp"
+#include "memory/padded.inline.hpp"
 
 template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count)
@@ -39,9 +40,8 @@ ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(Shenandoah
     _alloc_region_count(clamped_alloc_region_count(alloc_region_count)),
     _alloc_region_slot_mask(_alloc_region_count - 1u),
     _replenish_epoch(0) {
-  for (uint32_t i = 0; i < MAX_ALLOC_REGIONS; i++) {
-    _alloc_regions[i].store_relaxed(nullptr);
-  }
+  // create_unfreeable default-constructs each Atomic slot to nullptr; no explicit null-init needed.
+  _alloc_regions = PaddedArray<Atomic<ShenandoahHeapRegion*>, mtGC>::create_unfreeable(_alloc_region_count);
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>

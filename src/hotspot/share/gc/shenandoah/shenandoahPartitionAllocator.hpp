@@ -30,7 +30,12 @@
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "memory/allocation.hpp"
+#include "memory/padded.hpp"
 #include "utilities/powerOfTwo.hpp"
+
+// A cache-line-padded alloc-region slot, so adjacent slots on the CAS allocation path never
+// share a cache line (avoids false sharing between threads bumping different slots).
+typedef PaddedEnd<Atomic<ShenandoahHeapRegion*>> ShenandoahPaddedAllocRegion;
 
 // Per-partition lock-free allocator. Maintains a stripe of cached "alloc regions"; threads
 // bump-allocate via CAS on their slot's region. When a slot is exhausted the heap-locked
@@ -57,7 +62,8 @@ private:
   // the heap lock know another thread already replenished and can retry without re-reserving.
   volatile uint32_t _replenish_epoch;
 
-  Atomic<ShenandoahHeapRegion*> _alloc_regions[MAX_ALLOC_REGIONS];
+  // Cache-line-padded array of _alloc_region_count slots, allocated in the constructor.
+  ShenandoahPaddedAllocRegion* _alloc_regions;
 
   uint32_t alloc_region_slot(Thread* thread);
 
