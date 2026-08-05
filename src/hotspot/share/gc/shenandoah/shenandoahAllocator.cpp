@@ -23,6 +23,7 @@
  */
 
 #include "gc/shenandoah/shenandoahAllocator.hpp"
+#include "gc/shenandoah/shenandoahAllocRate.inline.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
@@ -66,9 +67,11 @@ static uint32_t collector_alloc_regions() {
 
 ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set)
   : _free_set(free_set),
-    _mutator_allocator(free_set, mutator_alloc_regions()),
-    _collector_allocator(free_set, collector_alloc_regions()),
-    _old_collector_allocator(free_set, collector_alloc_regions()) {
+    _alloc_rate(),
+    _alloc_rate_decay(&_alloc_rate),
+    _mutator_allocator(free_set, &_alloc_rate, mutator_alloc_regions()),
+    _collector_allocator(free_set, nullptr, collector_alloc_regions()),
+    _old_collector_allocator(free_set, nullptr, collector_alloc_regions()) {
   log_info(gc, init)("CAS Alloc Regions: mutator=%u, collector=%u",
                      _mutator_allocator.alloc_region_count(),
                      _collector_allocator.alloc_region_count());
@@ -77,19 +80,28 @@ ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set)
 HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
   if (ShenandoahHeapRegion::requires_humongous(req.size())) {
     ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock(), req.is_mutator_alloc());
+    HeapWord* result = nullptr;
     switch (req.type()) {
       case ShenandoahAllocRequest::_alloc_shared:
       case ShenandoahAllocRequest::_alloc_shared_gc:
         in_new_region = true;
-        return _free_set->allocate_contiguous(req, /* is_humongous = */ true);
+        result = _free_set->allocate_contiguous(req, /* is_humongous = */ true);
+        break;
       case ShenandoahAllocRequest::_alloc_cds:
         in_new_region = true;
-        return _free_set->allocate_contiguous(req, /* is_humongous = */ false);
+        result = _free_set->allocate_contiguous(req, /* is_humongous = */ false);
+        break;
       default:
         assert(false, "Should not reach here");
         in_new_region = false;
         return nullptr;
     }
+    // Humongous/CDS mutator allocations bypass the CAS granule accounting; report them directly.
+    // These are rare and already under the heap lock.
+    if (result != nullptr && req.is_mutator_alloc()) {
+      _alloc_rate.allocated((req.actual_size() + req.waste()) * HeapWordSize);
+    }
+    return result;
   }
 
   switch(req.type()) {

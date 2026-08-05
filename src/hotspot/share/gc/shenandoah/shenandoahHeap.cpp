@@ -568,7 +568,6 @@ ShenandoahHeap::ShenandoahHeap(ShenandoahCollectorPolicy* policy) :
   _active_generation(nullptr),
   _initial_size(0),
   _committed(0),
-  _alloc_rate_decay(&_alloc_rate),
   _max_workers(MAX3(ConcGCThreads, ParallelGCThreads, 1U)),
   _workers(nullptr),
   _safepoint_workers(nullptr),
@@ -718,7 +717,7 @@ void ShenandoahHeap::post_initialize() {
   // Periodically decay allocation rate to compensate for not being updated when allocation rate
   // is low. Heuristics are evaluated unconditionally from a dedicated thread so it will continue
   // to see the last (possibly stale) allocation rate if the allocation rate is low.
-  _alloc_rate_decay.enroll();
+  _allocator->enroll_alloc_rate_decay();
 
   MutexLocker ml(Threads_lock);
 
@@ -1029,6 +1028,10 @@ HeapWord* ShenandoahHeap::allocate_memory(ShenandoahAllocRequest& req) {
   return result;
 }
 
+ShenandoahAllocationRate& ShenandoahHeap::alloc_rate() {
+  return _allocator->alloc_rate();
+}
+
 inline bool ShenandoahHeap::should_retry_allocation(size_t original_full_gc_count) const {
   return shenandoah_policy()->full_gc_count() == original_full_gc_count
       && !shenandoah_policy()->is_at_shutdown();
@@ -1046,9 +1049,8 @@ HeapWord* ShenandoahHeap::allocate_memory_work(ShenandoahAllocRequest& req, bool
   HeapWord* result = _allocator->allocate(req, in_new_region);
 
   if constexpr (IS_MUTATOR) {
-    if (result != nullptr) {
-      _alloc_rate.allocated((req.actual_size() + req.waste()) * HeapWordSize);
-    }
+    // Allocation-rate accounting is now handled inside ShenandoahAllocator (per-granule for
+    // slotted regions, directly for humongous/CDS), so nothing to do here for the mutator path.
   } else {
     if (result != nullptr) {
       if (req.is_old()) {
@@ -2305,7 +2307,9 @@ void ShenandoahHeap::stop() {
   mmu_tracker()->stop();
 
   // Step 2. Stop decaying allocation rate.
-  _alloc_rate_decay.disenroll();
+  if (_allocator != nullptr) {
+    _allocator->disenroll_alloc_rate_decay();
+  }
 
   // Step 3. Wait until GC worker exits normally (this will cancel any ongoing GC).
   control_thread()->stop();

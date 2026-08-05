@@ -26,6 +26,7 @@
 #define SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 
 #include "gc/shared/tlab_globals.hpp"
+#include "gc/shenandoah/shenandoahAllocRate.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
@@ -43,12 +44,39 @@ public:
   static constexpr uint32_t MAX_ALLOC_REGIONS = 32;
 
 private:
+  // Only the mutator partition feeds the allocation-rate estimator.
+  static constexpr bool REPORTS_ALLOC_RATE = (PARTITION == ShenandoahFreeSetPartitionId::Mutator);
+
   ShenandoahFreeSet* const _free_set;
+
+  // Allocation-rate estimator (shared, owned by ShenandoahAllocator). Non-null only for the
+  // mutator partition; other partitions do not report and leave this null.
+  ShenandoahAllocationRate* const _alloc_rate;
+
+  // log2 of the granule (in bytes) that throttles allocation-rate reporting: on the CAS path we
+  // only report when an allocation's bump crosses a static granule boundary (measured from
+  // region bottom), so the shared rate counter is touched at most ~once per granule. The amount
+  // reported is always the delta against the region's watermark, so reporting stays lossless
+  // regardless of the throttle. Meaningful only when REPORTS_ALLOC_RATE.
+  const uint32_t _report_granule_shift;
 
   // Clamp to [1, MAX_ALLOC_REGIONS] and round down to a power of 2.
   static uint32_t clamped_alloc_region_count(uint32_t alloc_region_count) {
     return round_down_power_of_2(MIN2(MAX2(alloc_region_count, 1u), MAX_ALLOC_REGIONS));
   }
+
+  // Effective report-granule shift: ShenandoahAllocRateReportGranule rounded down to a power of
+  // two and clamped to [HeapWordSize, region_size], expressed as a byte shift.
+  static uint32_t report_granule_shift();
+
+  // Advance r's allocation-rate watermark to its current used bytes. For the mutator partition,
+  // also report the claimed delta to the estimator; collector partitions discard their deltas.
+  // Idempotent and safe to call concurrently.
+  void report_allocated(ShenandoahHeapRegion* r);
+
+  // As above, but only when the bump old_top->new_top crossed a granule boundary. Used on the
+  // hot CAS path to bound how often the shared rate counter is touched.
+  void maybe_report_allocated(ShenandoahHeapRegion* r, HeapWord* old_top, HeapWord* new_top);
 
   uint32_t const _alloc_region_count;       // power-of-two slot count
   uint32_t const _alloc_region_slot_mask;   // _alloc_region_count - 1
@@ -79,7 +107,7 @@ private:
   void release_alloc_region(uint32_t slot);
 
 public:
-  ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count);
+  ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, ShenandoahAllocationRate* alloc_rate, uint32_t alloc_region_count);
 
   uint32_t alloc_region_count() const { return _alloc_region_count; }
 

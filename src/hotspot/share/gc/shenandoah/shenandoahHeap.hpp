@@ -228,9 +228,6 @@ private:
   Atomic<size_t> _committed;
   shenandoah_padding(1);
 
-  ShenandoahAllocationRate _alloc_rate;
-  ShenandoahDecayAllocRate _alloc_rate_decay;
-
 public:
   void increase_committed(size_t bytes);
   void decrease_committed(size_t bytes);
@@ -245,9 +242,8 @@ public:
 
   void set_soft_max_capacity(size_t v);
 
-  ShenandoahAllocationRate& alloc_rate() {
-    return _alloc_rate;
-  }
+  // Allocation-rate estimator now lives in ShenandoahAllocator; forward to it.
+  ShenandoahAllocationRate& alloc_rate();
 
 // ---------- Periodic Tasks
 //

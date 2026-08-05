@@ -66,6 +66,17 @@
           "baseline allocation rate is maintained.")                        \
           range(1,10000)                                                    \
                                                                             \
+  product(size_t, ShenandoahAllocRateReportGranule, 1*M, EXPERIMENTAL,      \
+          "Granularity (in bytes) at which mutator allocations are "        \
+          "reported to the allocation rate estimator. Rather than "         \
+          "reporting every allocation (which contends on a shared "         \
+          "counter), the CAS allocator reports once per granule as the "    \
+          "top pointer crosses static granule boundaries within a region. " \
+          "Rounded down to a power of two and clamped to the region size. " \
+          "Larger values reduce allocation-path contention at the cost of " \
+          "coarser, less timely allocation-rate samples.")                  \
+          range(1, max_uintx)                                               \
+                                                                            \
   product(uintx, ShenandoahGenerationalMinPIPUsage, 30, EXPERIMENTAL,       \
           "(Generational mode only) What percent of a heap region "         \
           "should be used before we consider promoting a region in "        \

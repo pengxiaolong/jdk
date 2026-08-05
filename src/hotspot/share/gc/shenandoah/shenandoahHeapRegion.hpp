@@ -269,6 +269,12 @@ private:
   // At retirement, growth minus this is attributed to LAB allocs by role.
   Atomic<size_t> _shared_atomic_allocs;
 
+  // Used bytes (from bottom) already attributed for allocation-rate reporting. Advanced
+  // monotonically as allocators report and re-baselined when allocation metadata is reset.
+  // Only mutator deltas are added to the estimator; collector deltas are discarded so they
+  // cannot be misattributed if the region later returns to the mutator partition.
+  Atomic<size_t> _alloc_rate_reported_used;
+
   Atomic<size_t> _live_data;
   Atomic<size_t> _critical_pins;
 
@@ -547,6 +553,11 @@ public:
   inline void adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t);
   inline void adjust_alloc_metadata_atomic(const ShenandoahAllocRequest &req, size_t);
   void reset_alloc_metadata();
+
+  // Allocation-rate reporting watermark: bytes (from bottom) already reported. Atomically
+  // advance it to used_bytes and return the newly claimed delta (0 if another thread already
+  // reported past used_bytes). Lossless and safe to call concurrently on the CAS alloc path.
+  inline size_t claim_alloc_rate_report(size_t used_bytes);
   size_t get_shared_allocs() const;
   size_t get_tlab_allocs() const;
   size_t get_gclab_allocs() const;

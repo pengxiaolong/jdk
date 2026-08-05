@@ -70,6 +70,8 @@ ShenandoahHeapRegion::ShenandoahHeapRegion(HeapWord* start, size_t index, bool c
   _tlab_allocs(0),
   _gclab_allocs(0),
   _plab_allocs(0),
+  _shared_atomic_allocs(0),
+  _alloc_rate_reported_used(0),
   _live_data(0),
   _critical_pins(0),
   _mixed_candidate_garbage_words(0),
@@ -364,6 +366,9 @@ void ShenandoahHeapRegion::reset_alloc_metadata() {
   _gclab_allocs = 0;
   _plab_allocs = 0;
   _shared_atomic_allocs.store_relaxed(0);
+  // Existing occupancy is not a new mutator allocation. This is zero after recycling, and
+  // preserves the post-compaction occupancy as the reporting baseline after Full GC.
+  _alloc_rate_reported_used.store_relaxed(used());
 }
 
 size_t ShenandoahHeapRegion::get_shared_allocs() const {
@@ -583,7 +588,6 @@ void ShenandoahHeapRegion::recycle_internal() {
   _top_at_evac_start = _bottom;
   _mixed_candidate_garbage_words = 0;
   clear_live_data();
-  reset_alloc_metadata();
   heap->marking_context()->reset_top_at_mark_start(this);
   set_update_watermark(bottom());
   clear_has_self_forwards();
@@ -595,6 +599,7 @@ void ShenandoahHeapRegion::recycle_internal() {
     SpaceMangler::mangle_region(MemRegion(bottom(), top()));
   }
   set_top(bottom());
+  reset_alloc_metadata();
   set_affiliation(FREE);
 
   // Lastly, set region state to empty

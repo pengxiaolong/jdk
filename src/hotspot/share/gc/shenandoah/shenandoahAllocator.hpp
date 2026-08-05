@@ -25,6 +25,7 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHALLOCATOR_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHALLOCATOR_HPP
 
+#include "gc/shenandoah/shenandoahAllocRate.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahPartitionAllocator.hpp"
 #include "memory/allocation.hpp"
@@ -40,6 +41,10 @@ class ShenandoahAllocator : public CHeapObj<mtGC> {
   friend class VMStructs;
 private:
   ShenandoahFreeSet*                  _free_set;
+  // Allocation-rate estimator. Owned here; a pointer is shared with the mutator partition
+  // allocator, which reports mutator allocations as top crosses granule boundaries.
+  ShenandoahAllocationRate            _alloc_rate;
+  ShenandoahDecayAllocRate            _alloc_rate_decay;
   ShenandoahMutatorAllocator          _mutator_allocator;
   ShenandoahCollectorAllocator        _collector_allocator;
   ShenandoahOldCollectorAllocator     _old_collector_allocator;
@@ -48,6 +53,12 @@ public:
   ShenandoahAllocator(ShenandoahFreeSet* free_set);
 
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
+
+  ShenandoahAllocationRate& alloc_rate() { return _alloc_rate; }
+
+  // Start/stop the periodic allocation-rate decay task.
+  void enroll_alloc_rate_decay()   { _alloc_rate_decay.enroll(); }
+  void disenroll_alloc_rate_decay() { _alloc_rate_decay.disenroll(); }
 
   // Release collector (and old-collector) cached alloc regions at GC phase boundaries.
   void release_collector_alloc_regions();

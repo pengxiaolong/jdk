@@ -167,6 +167,21 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(ShenandoahAllocRequest& req,
   return obj;
 }
 
+inline size_t ShenandoahHeapRegion::claim_alloc_rate_report(size_t used_bytes) {
+  // CAS-advance the watermark; the winner reports the delta it claimed. Retries only lose to a
+  // concurrent advance, and the aggregate of all claimed deltas equals the final watermark, so
+  // no allocated bytes are ever dropped or double-counted.
+  size_t reported = _alloc_rate_reported_used.load_relaxed();
+  while (used_bytes > reported) {
+    const size_t witnessed = _alloc_rate_reported_used.compare_exchange(reported, used_bytes, memory_order_relaxed);
+    if (witnessed == reported) {
+      return used_bytes - reported;
+    }
+    reported = witnessed;
+  }
+  return 0;
+}
+
 inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t size) {
   shenandoah_assert_heaplocked_or_safepoint();
   switch (req.type()) {

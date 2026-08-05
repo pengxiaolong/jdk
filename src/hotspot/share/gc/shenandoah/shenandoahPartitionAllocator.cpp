@@ -23,6 +23,7 @@
  */
 
 #include "gc/shared/workerThread.hpp"
+#include "gc/shenandoah/shenandoahAllocRate.inline.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
@@ -32,15 +33,62 @@
 #include "gc/shenandoah/shenandoahPartitionAllocator.hpp"
 #include "gc/shenandoah/shenandoahThreadLocalData.hpp"
 #include "logging/log.hpp"
+#include "utilities/powerOfTwo.hpp"
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count)
+uint32_t ShenandoahPartitionAllocator<PARTITION>::report_granule_shift() {
+  if (!REPORTS_ALLOC_RATE) {
+    return 0u;
+  }
+  const size_t region_bytes = ShenandoahHeapRegion::region_size_bytes();
+  size_t granule = round_down_power_of_2(clamp(ShenandoahAllocRateReportGranule,
+                                               (size_t) HeapWordSize, region_bytes));
+  return checked_cast<uint32_t>(log2i_exact(granule));
+}
+
+template<ShenandoahFreeSetPartitionId PARTITION>
+ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set,
+                                                                      ShenandoahAllocationRate* alloc_rate,
+                                                                      uint32_t alloc_region_count)
   : _free_set(free_set),
+    _alloc_rate(REPORTS_ALLOC_RATE ? alloc_rate : nullptr),
+    _report_granule_shift(report_granule_shift()),
     _alloc_region_count(clamped_alloc_region_count(alloc_region_count)),
     _alloc_region_slot_mask(_alloc_region_count - 1u),
     _replenish_epoch(0) {
+  assert(!REPORTS_ALLOC_RATE || alloc_rate != nullptr, "Mutator allocator must have an allocation rate");
   for (uint32_t i = 0; i < MAX_ALLOC_REGIONS; i++) {
     _alloc_regions[i].store_relaxed(nullptr);
+  }
+}
+
+template<ShenandoahFreeSetPartitionId PARTITION>
+void ShenandoahPartitionAllocator<PARTITION>::report_allocated(ShenandoahHeapRegion* r) {
+  if constexpr (REPORTS_ALLOC_RATE) {
+    // All partitions advance the watermark so collector allocations cannot later be attributed to
+    // the mutator when a region changes partitions. Only mutator deltas feed the rate estimator.
+    const size_t used_bytes = pointer_delta(r->top_relaxed(), r->bottom()) << LogHeapWordSize;
+    const size_t delta = r->claim_alloc_rate_report(used_bytes);
+    if (delta != 0) {
+      _alloc_rate->allocated(delta);
+    }
+  }
+}
+
+template<ShenandoahFreeSetPartitionId PARTITION>
+void ShenandoahPartitionAllocator<PARTITION>::maybe_report_allocated(ShenandoahHeapRegion* r,
+                                                                     HeapWord* old_top,
+                                                                     HeapWord* new_top) {
+  if (!REPORTS_ALLOC_RATE) {
+    return;
+  }
+  // Throttle: only report when this bump crossed a static granule boundary (measured from
+  // bottom). The reported amount is still the full watermark delta, so no bytes are lost; the
+  // granule only bounds how often the shared counter is touched on the hot path.
+  const size_t old_used = pointer_delta(old_top, r->bottom()) << LogHeapWordSize;
+  const size_t new_used = pointer_delta(new_top, r->bottom()) << LogHeapWordSize;
+  if ((old_used >> _report_granule_shift) != (new_used >> _report_granule_shift)) {
+    report_allocated(r);
   }
 }
 
@@ -107,6 +155,9 @@ void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint3
     occupant->set_update_watermark(occupant->plain_top());
     occupant->set_gc_alloc_region(false);
   }
+  // Flush mutator bytes or baseline collector bytes since the last update. Advancing the
+  // watermark is idempotent, so doing it on every uninstall never double-counts.
+  report_allocated(occupant);
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
@@ -144,6 +195,7 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
       occupant->set_update_watermark(occupant->plain_top());
       occupant->set_gc_alloc_region(false);
     }
+    report_allocated(occupant);
   }
   return true;
 }
@@ -253,6 +305,11 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
   assert(result != nullptr, "Allocation must succeed, region free: %zu, request minimal size: %zu",
     r->free_relaxed(), req.is_lab_alloc() ? req.min_size() : req.size());
 
+  // Fresh region path (not an active CAS alloc region): r->used() already reflects this
+  // allocation. Report the watermark delta; idempotent, so a later CAS reservation of this same
+  // region won't double-count.
+  report_allocated(r);
+
   if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
     assert(req.is_young(), "Mutator allocations always come from young generation.");
     _free_set->increase_partition_used(PARTITION, req.actual_size() * HeapWordSize);
@@ -268,6 +325,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
       if (waste_bytes > 0) {
         req.set_waste(waste_bytes / HeapWordSize);
+        _alloc_rate->allocated(waste_bytes);
       }
     }
     retired_after_alloc = true;
@@ -287,8 +345,13 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(Shenan
   } else {
     obj = r->allocate_atomic<HEAP_LOCKED>(req, ready_to_replenish);
   }
-  if (obj != nullptr && obj == r->bottom()) {
-    in_new_region = true;
+  if (obj != nullptr) {
+    if (obj == r->bottom()) {
+      in_new_region = true;
+    }
+    // obj is the pre-bump top; report (throttled to granule boundaries) the bytes allocated so
+    // far. Any remainder is flushed when the region is uninstalled.
+    maybe_report_allocated(r, obj, obj + req.actual_size());
   }
   return obj;
 }
@@ -344,11 +407,14 @@ uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32
           replenished_count++;
         } else {
           assert((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size(), "Must be");
+          // The pending alloc exhausted this freshly reserved region; it is retired here without
+          // being published to a slot. Flush the watermark delta so nothing is lost.
           r->unset_active_alloc_region();
           if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
             r->set_update_watermark(r->plain_top());
             r->set_gc_alloc_region(false);
           }
+          report_allocated(r);
         }
       } else {
         _alloc_regions[slot].release_store(r);
