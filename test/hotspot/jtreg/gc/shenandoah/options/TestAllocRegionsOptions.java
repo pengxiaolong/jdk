@@ -100,24 +100,22 @@ public class TestAllocRegionsOptions {
 
     private static void testEffectiveCounts() throws Exception {
         // With -Xmx2g -XX:ShenandoahRegionSize=256K: region_count=8192
-        //   mutator heap_bound = round_power_of_2(8192/256) = 32
-        //   collector heap_bound = round_power_of_2(8192/512) = 16
-        assertEffectiveCount(32, 16,
+        //   heap_bound = round_power_of_2(8192/256) = 32 (same for mutator and collector)
+        assertEffectiveCount(32, 32,
                 "-Xmx2g", "-XX:ShenandoahRegionSize=256K",
                 "-XX:ShenandoahMutatorAllocRegions=32",
-                "-XX:ShenandoahCollectorAllocRegions=16");
+                "-XX:ShenandoahCollectorAllocRegions=32");
 
         // Explicit override of 32 clamped by heap_bound on small heap:
-        // With -Xmx256m: region_count=1024, mutator heap_bound=round_power_of_2(1024/256)=4
-        // So requesting 32 yields 4.
-        assertEffectiveCount(4, 2,
+        // With -Xmx256m: region_count=1024, heap_bound=round_power_of_2(1024/256)=4
+        // So requesting 32 yields 4 for both.
+        assertEffectiveCount(4, 4,
                 "-Xmx256m",
                 "-XX:ShenandoahMutatorAllocRegions=32",
                 "-XX:ShenandoahCollectorAllocRegions=32");
 
         // With -Xmx4g -XX:ShenandoahRegionSize=256K: region_count=16384
-        //   mutator heap_bound = round_power_of_2(16384/256) = 64 -> clamped to MAX=32
-        //   collector heap_bound = round_power_of_2(16384/512) = 32
+        //   heap_bound = round_power_of_2(16384/256) = 64 -> clamped to MAX=32
         // Both partitions should achieve the full 32 slots.
         assertEffectiveCount(32, 32,
                 "-Xmx4g", "-XX:ShenandoahRegionSize=256K",
@@ -125,15 +123,15 @@ public class TestAllocRegionsOptions {
                 "-XX:ShenandoahCollectorAllocRegions=32");
 
         // Default (auto) on a small heap: CPU-bound but clamped by heap_bound.
-        // -Xmx256m: region_count=1024, mutator heap_bound=4, collector heap_bound=2
-        assertEffectiveCountAtMost(4, 2,
+        // -Xmx256m: region_count=1024, heap_bound=4
+        assertEffectiveCountAtMost(4, 4,
                 "-Xmx256m");
 
         // Aggressive heuristics exercises degenerated GC with active CAS alloc regions.
-        assertEffectiveCount(32, 16,
+        assertEffectiveCount(32, 32,
                 "-Xmx2g", "-XX:ShenandoahRegionSize=256K",
                 "-XX:ShenandoahMutatorAllocRegions=32",
-                "-XX:ShenandoahCollectorAllocRegions=16",
+                "-XX:ShenandoahCollectorAllocRegions=32",
                 "-XX:ShenandoahGCHeuristics=aggressive");
     }
 

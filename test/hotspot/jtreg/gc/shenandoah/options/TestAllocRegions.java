@@ -75,11 +75,11 @@
  * @summary Maximum collector alloc regions with heap large enough for heap_bound>=32
  * @bug 8361099
  * @requires vm.gc.Shenandoah
- * @requires os.maxMemory > 4G
+ * @requires os.maxMemory > 2G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahCollectorAllocRegions=32 -XX:ShenandoahRegionSize=256K
- *      -XX:+ShenandoahVerify -Xmx4g -Xms4g
+ *      -XX:+ShenandoahVerify -Xmx2g -Xms2g
  *      TestAllocRegions
  */
 
@@ -124,12 +124,12 @@
  * @summary Generational mode with maximum alloc regions (heap_bound>=32 for both)
  * @bug 8361099
  * @requires vm.gc.Shenandoah
- * @requires os.maxMemory > 4G
+ * @requires os.maxMemory > 2G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:ShenandoahGCMode=generational -XX:ShenandoahRegionSize=256K
  *      -XX:ShenandoahMutatorAllocRegions=32 -XX:ShenandoahCollectorAllocRegions=32
- *      -XX:+ShenandoahVerify -Xmx4g -Xms4g
+ *      -XX:+ShenandoahVerify -Xmx2g -Xms2g
  *      TestAllocRegions 32
  */
 

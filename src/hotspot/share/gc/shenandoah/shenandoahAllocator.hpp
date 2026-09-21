@@ -58,6 +58,8 @@ public:
 
   void reserve_collector_alloc_regions_under_lock();
 
+  void reserve_mutator_alloc_regions_under_lock();
+
   size_t unsafe_max_tlab_alloc(Thread* thread) {
     return _mutator_allocator.unsafe_max_tlab_alloc(thread);
   }
