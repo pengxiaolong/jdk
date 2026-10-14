@@ -61,9 +61,11 @@ void ShenandoahAllocRate<Clock>::update_minimum_sample_size(const size_t availab
 template<typename Clock>
 uint32_t ShenandoahAllocRate<Clock>::log_per_stripe_threshold_for(const size_t minimum_sample_size) const {
   // Floor-log2 of the per-stripe share, clamped to a max-TLAB-sized floor: a smaller
-  // per-stripe threshold makes no sense as it triggers samples far too often.
+  // per-stripe threshold makes no sense as it triggers samples far too often. The floor
+  // never exceeds the minimum sample size itself.
   const int log_threshold = log2i(minimum_sample_size) - static_cast<int>(_unsampled.log_num_stripes());
-  return static_cast<uint32_t>(MAX2(log_threshold, log2i(ShenandoahHeapRegion::max_tlab_size_bytes())));
+  const size_t floor = MIN2(minimum_sample_size, ShenandoahHeapRegion::max_tlab_size_bytes());
+  return static_cast<uint32_t>(MAX2(log_threshold, log2i(floor)));
 }
 
 template<typename Clock>

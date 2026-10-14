@@ -26,6 +26,7 @@
 #include "gc/shared/gc_globals.hpp"
 
 #include "gc/shenandoah/shenandoahAllocRate.inline.hpp"
+#include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc/shenandoah/shenandoahStripedCounter.inline.hpp"
 #include "runtime/atomic.hpp"
 #include "threadHelper.inline.hpp"
@@ -50,6 +51,11 @@ class ShenandoahAllocationRateTest : public testing::Test {
 protected:
   ShenandoahAllocationRateTest() {
     ShenandoahMockClock::Counter = 0;
+    // The gtest VM may not run Shenandoah, in which case region sizes (used by
+    // ShenandoahAllocRate) are not set up. They can only be set once per VM.
+    if (ShenandoahHeapRegion::region_size_bytes() == 0) {
+      ShenandoahHeapRegion::setup_sizes(MaxHeapSize);
+    }
   }
 
   template<typename Clock>
