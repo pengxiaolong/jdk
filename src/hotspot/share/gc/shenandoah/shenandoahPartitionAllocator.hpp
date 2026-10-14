@@ -25,7 +25,6 @@
 #ifndef SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 #define SHARE_GC_SHENANDOAH_SHENANDOAHPARTITIONALLOCATOR_HPP
 
-#include "gc/shared/tlab_globals.hpp"
 #include "gc/shenandoah/shenandoahAllocRequest.hpp"
 #include "gc/shenandoah/shenandoahFreeSet.hpp"
 #include "gc/shenandoah/shenandoahHeapRegion.hpp"
@@ -67,7 +66,6 @@ private:
                                           uint32_t start_slot, uint32_t count, uint32_t& slots_ready_to_replenish);
 
   void uninstall_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant);
-  bool try_install_alloc_region(uint32_t slot, ShenandoahHeapRegion* occupant, ShenandoahHeapRegion* new_region);
 
   HeapWord* allocate_in(ShenandoahHeapRegion* r,
                         ShenandoahAllocRequest& req,
@@ -96,18 +94,6 @@ public:
 
   // Pre-fill empty stripe slots from the partition. Caller must hold heap lock.
   void reserve_alloc_regions();
-
-  size_t unsafe_max_tlab_alloc(Thread* thread) {
-    uint32_t slot = alloc_region_slot(thread);
-    ShenandoahHeapRegion* r = _alloc_regions[slot].load_relaxed();
-    if (r != nullptr) {
-      size_t free_bytes = r->free();
-      if (free_bytes >= MinTLABSize) {
-        return MIN2(free_bytes, ShenandoahHeapRegion::max_tlab_size_bytes());
-      }
-    }
-    return ShenandoahHeapRegion::max_tlab_size_bytes();
-  }
 
   // Best-effort sum of free bytes across all cached alloc regions (relaxed reads).
   size_t remnant_bytes() const {

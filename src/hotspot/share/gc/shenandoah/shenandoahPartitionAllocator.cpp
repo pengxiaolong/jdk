@@ -104,36 +104,6 @@ void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint3
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uint32_t slot,
-                                                                       ShenandoahHeapRegion* occupant,
-                                                                       ShenandoahHeapRegion* new_region) {
-  shenandoah_assert_heaplocked();
-  assert(!new_region->is_atomic_alloc_region(), "Fresh region must not already be an active alloc region");
-  assert(_alloc_regions[slot].load_relaxed() == occupant, "Must be same");
-
-  // Only install if the occupant is exhausted (or slot is empty).
-  if (occupant != nullptr && occupant->free_words() >= ShenandoahHeap::plab_min_size()) {
-    return false;
-  }
-
-  constexpr ShenandoahAffiliation affiliation =
-    (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) ? OLD_GENERATION : YOUNG_GENERATION;
-  assert(new_region->affiliation() == affiliation, "Region affiliation must be established before install");
-  assert(new_region->is_regular_or_regular_pinned(),
-         "Region must be made regular (or left pinned) by allocate_in before install");
-  size_t remnant_bytes = _free_set->retire_region(PARTITION, new_region->index(), new_region->used());
-  assert(remnant_bytes == _free_set->alloc_capacity(new_region), "Sanity check");
-  new_region->set_active_alloc_region(PARTITION != ShenandoahFreeSetPartitionId::Mutator);
-
-  _alloc_regions[slot].release_store(new_region);
-
-  if (occupant != nullptr) {
-    occupant->unset_active_alloc_region();
-  }
-  return true;
-}
-
-template<ShenandoahFreeSetPartitionId PARTITION>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
   Thread* const thread = Thread::current();
   uint32_t const slot = alloc_region_slot(thread);
@@ -188,7 +158,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     }
     if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
       if (alloc_region == nullptr && ShenandoahEvacReserveOverflow) {
-        alloc_region = _free_set->steal_from_mutator(PARTITION);
+        alloc_region = _free_set->steal_from_mutator(PARTITION, req);
         if (alloc_region != nullptr) {
           assert(alloc_region->is_empty(), "Stolen region must be empty");
           in_new_region = true;

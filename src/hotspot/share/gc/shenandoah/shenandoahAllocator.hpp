@@ -33,20 +33,26 @@ typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Mutator>     
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::Collector>    ShenandoahCollectorAllocator;
 typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector> ShenandoahOldCollectorAllocator;
 
-// Single entry point for heap allocations. Humongous requests go directly to
-// ShenandoahFreeSet under the heap lock; all others route to a per-partition
-// CAS allocator (mutator, collector, or old-collector).
+// ShenandoahAllocator is the single entry point for memory allocations. Humongous
+// requests are served directly via ShenandoahFreeSet under the heap lock; all other
+// requests are routed to the appropriate per-partition CAS allocator (mutator,
+// collector, or old-collector).
 class ShenandoahAllocator : public CHeapObj<mtGC> {
   friend class VMStructs;
 private:
   ShenandoahFreeSet*                  _free_set;
-  ShenandoahMutatorAllocator          _mutator_allocator;
-  ShenandoahCollectorAllocator        _collector_allocator;
-  ShenandoahOldCollectorAllocator     _old_collector_allocator;
+  ShenandoahMutatorAllocator          _mutator_alloc;
+  ShenandoahCollectorAllocator        _collector_alloc;
+  ShenandoahOldCollectorAllocator     _old_collector_alloc;
 
 public:
   ShenandoahAllocator(ShenandoahFreeSet* free_set);
 
+  // Allocate memory from heap for a request. Humongous requests are served directly via
+  // ShenandoahFreeSet; all other requests are routed to the mutator, collector, or
+  // old-collector partition allocator based on request type.
+  // Returns nullptr if the request cannot be satisfied. Sets in_new_region to indicate
+  // whether the returned address is the first allocation in a freshly acquired region.
   HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
 
   // Release collector (and old-collector) cached alloc regions at GC phase boundaries.
@@ -59,10 +65,6 @@ public:
   void reserve_collector_alloc_regions_under_lock();
 
   void reserve_mutator_alloc_regions_under_lock();
-
-  size_t unsafe_max_tlab_alloc(Thread* thread) {
-    return _mutator_allocator.unsafe_max_tlab_alloc(thread);
-  }
 
   // Pre-charged but unconsumed bytes in cached alloc regions (accounting correction).
   size_t remnant_bytes(ShenandoahFreeSetPartitionId partition) const;

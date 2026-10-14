@@ -125,10 +125,8 @@ public class ShenandoahHeapRegion extends VMObject implements LiveRegionsProvide
         return EndField.getValue(addr);
     }
 
-    // For an active CAS alloc region, the bytes pre-charged to the partition's used at reserve time
-    // that have not yet been consumed (end - top). Only meaningful for active CAS alloc regions. The
-    // in-process ShenandoahFreeSet subtracts the sum of this across alloc regions from its raw stored
-    // used (see alloc_region_correction / corrected_used); the SA mirrors that so jhsdb reports the same used.
+    // Unconsumed capacity (end - top) pre-charged to used at reserve time. Only meaningful for
+    // active CAS alloc regions.
     public long remnantBytes() {
         return EndField.getValue(addr).minus(TopField.getValue(addr));
     }

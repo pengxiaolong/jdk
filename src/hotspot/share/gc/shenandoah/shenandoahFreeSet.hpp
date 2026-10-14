@@ -638,7 +638,8 @@ public:
   // Flips the region, sets up affiliation, and returns it ready for allocation.
   // The returned region is always empty (newly available for allocation).
   // Returns nullptr if no region can be stolen. Caller must hold the heap lock.
-  ShenandoahHeapRegion* steal_from_mutator(ShenandoahFreeSetPartitionId target_partition);
+  ShenandoahHeapRegion* steal_from_mutator(ShenandoahFreeSetPartitionId target_partition,
+                                           ShenandoahAllocRequest& req);
 
   // Reserve up to regions_to_reserve regions from PARTITION for striped CAS allocation, each with
   // at least min_free_words free. Regions are retired (pre-charged) and partition totals recomputed
@@ -654,7 +655,6 @@ public:
   void mark_region_used(ShenandoahFreeSetPartitionId partition);
   size_t retire_region(ShenandoahFreeSetPartitionId partition, size_t idx, size_t used_bytes);
   void unretire_alloc_region(ShenandoahFreeSetPartitionId partition, ShenandoahHeapRegion* r);
-  void decrease_region_counts(ShenandoahFreeSetPartitionId partition, size_t regions);
 
   // Public because ShenandoahRegionPartitions assertions require access.
   size_t alloc_capacity(ShenandoahHeapRegion *r) const;

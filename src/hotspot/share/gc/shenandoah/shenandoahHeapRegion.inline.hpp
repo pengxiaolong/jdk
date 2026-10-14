@@ -58,19 +58,20 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, const ShenandoahAllocReque
   assert(is_object_aligned(size), "alloc size breaks alignment: %zu", size);
 
   HeapWord* obj = top();
-  HeapWord* new_top = obj + size;
-  if (new_top <= end()) {
+  if (pointer_delta(end(), obj) >= size) {
     make_regular_allocation(req.affiliation());
     adjust_alloc_metadata(req, size);
 
+    HeapWord* new_top = obj + size;
     set_top(new_top);
 
     assert(is_object_aligned(new_top), "new top breaks alignment: " PTR_FORMAT, p2i(new_top));
     assert(is_object_aligned(obj),     "obj is not aligned: "       PTR_FORMAT, p2i(obj));
 
     return obj;
+  } else {
+    return nullptr;
   }
-  return nullptr;
 }
 
 HeapWord* ShenandoahHeapRegion::allocate_atomic(ShenandoahAllocRequest& req, bool& ready_to_replenish) {
@@ -99,9 +100,8 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(ShenandoahAllocRequest& req, boo
       ready_to_replenish = pointer_delta(end(), new_top) < min_free_words;
       return obj;
     }
-    //Retry
+    // Retry with the current top returned by the failed CAS
     obj = prev_top;
-    SpinPause(); // Contended, retry after spin pause
   }
 }
 
@@ -137,9 +137,8 @@ HeapWord* ShenandoahHeapRegion::allocate_lab_atomic(ShenandoahAllocRequest& req,
       ready_to_replenish = pointer_delta(end(), new_top) < min_free_words;
       return obj;
     }
-    //Retry
+    // Retry with the current top returned by the failed CAS
     obj = prev_top;
-    SpinPause(); // Contended, retry after spin pause
   }
 }
 

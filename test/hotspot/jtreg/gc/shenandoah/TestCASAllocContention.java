@@ -35,12 +35,12 @@
 
 /*
  * @test id=single-slot
- * @summary Force all mutator threads onto a single alloc region slot
+ * @summary Force all mutator and collector threads onto a single alloc region slot
  * @bug 8361099
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahMutatorAllocRegions=1
+ *      -XX:ShenandoahMutatorAllocRegions=1 -XX:ShenandoahCollectorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
  */
@@ -72,12 +72,13 @@
 
 /*
  * @test id=generational-single-slot
- * @summary Generational mode with maximum contention on one mutator slot
+ * @summary Generational mode with a single mutator and collector alloc region slot
  * @bug 8361099
  * @requires vm.gc.Shenandoah
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahGCMode=generational -XX:ShenandoahMutatorAllocRegions=1
+ *      -XX:ShenandoahGCMode=generational
+ *      -XX:ShenandoahMutatorAllocRegions=1 -XX:ShenandoahCollectorAllocRegions=1
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
  */
@@ -115,6 +116,18 @@
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
  *      -XX:-UseTLAB -XX:ShenandoahMutatorAllocRegions=1
+ *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      TestCASAllocContention
+ */
+
+/*
+ * @test id=no-tlab-generational
+ * @summary Shared CAS path in generational mode
+ * @bug 8361099
+ * @requires vm.gc.Shenandoah
+ *
+ * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
+ *      -XX:-UseTLAB -XX:ShenandoahGCMode=generational
  *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
  *      TestCASAllocContention
  */

@@ -66,12 +66,12 @@ static uint32_t collector_alloc_regions() {
 
 ShenandoahAllocator::ShenandoahAllocator(ShenandoahFreeSet* free_set)
   : _free_set(free_set),
-    _mutator_allocator(free_set, mutator_alloc_regions()),
-    _collector_allocator(free_set, collector_alloc_regions()),
-    _old_collector_allocator(free_set, collector_alloc_regions()) {
+    _mutator_alloc(free_set, mutator_alloc_regions()),
+    _collector_alloc(free_set, collector_alloc_regions()),
+    _old_collector_alloc(free_set, collector_alloc_regions()) {
   log_info(gc, init)("CAS Alloc Regions: mutator=%u, collector=%u",
-                     _mutator_allocator.alloc_region_count(),
-                     _collector_allocator.alloc_region_count());
+                     _mutator_alloc.alloc_region_count(),
+                     _collector_alloc.alloc_region_count());
 }
 
 HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_new_region) {
@@ -86,34 +86,26 @@ HeapWord* ShenandoahAllocator::allocate(ShenandoahAllocRequest& req, bool& in_ne
         in_new_region = true;
         return _free_set->allocate_contiguous(req, /* is_humongous = */ false);
       default:
-        assert(false, "Should not reach here");
+        ShouldNotReachHere();
         in_new_region = false;
         return nullptr;
     }
   }
 
-  switch(req.type()) {
-    case ShenandoahAllocRequest::_alloc_shared:
-    case ShenandoahAllocRequest::_alloc_tlab:
-    case ShenandoahAllocRequest::_alloc_cds:
-      return _mutator_allocator.allocate(req, in_new_region);
-    case ShenandoahAllocRequest::_alloc_gclab:
-    case ShenandoahAllocRequest::_alloc_shared_gc:
-      return _collector_allocator.allocate(req, in_new_region);
-    case ShenandoahAllocRequest::_alloc_shared_gc_old:
-    case ShenandoahAllocRequest::_alloc_shared_gc_promotion:
-    case ShenandoahAllocRequest::_alloc_plab:
-      return _old_collector_allocator.allocate(req, in_new_region);
-    default:
-      assert(false, "Should not reach here");
-      return nullptr;
+  // Route to the appropriate per-partition allocator.
+  if (req.is_mutator_alloc()) {
+    return _mutator_alloc.allocate(req, in_new_region);
+  } else if (req.is_old()) {
+    return _old_collector_alloc.allocate(req, in_new_region);
+  } else {
+    return _collector_alloc.allocate(req, in_new_region);
   }
 }
 
 void ShenandoahAllocator::release_collector_alloc_regions() {
-  _collector_allocator.release_alloc_regions();
+  _collector_alloc.release_alloc_regions();
   if (ShenandoahHeap::heap()->mode()->is_generational()) {
-    _old_collector_allocator.release_alloc_regions();
+    _old_collector_alloc.release_alloc_regions();
   }
 }
 
@@ -122,30 +114,29 @@ void ShenandoahAllocator::release_collector_alloc_regions_under_lock() {
   release_collector_alloc_regions();
 }
 
-
 void ShenandoahAllocator::release_mutator_alloc_regions_under_lock() {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
-  _mutator_allocator.release_alloc_regions();
+  _mutator_alloc.release_alloc_regions();
 }
 
 void ShenandoahAllocator::reserve_collector_alloc_regions_under_lock() {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
-  _collector_allocator.reserve_alloc_regions();
+  _collector_alloc.reserve_alloc_regions();
   if (ShenandoahHeap::heap()->mode()->is_generational()) {
-    _old_collector_allocator.reserve_alloc_regions();
+    _old_collector_alloc.reserve_alloc_regions();
   }
 }
 
 void ShenandoahAllocator::reserve_mutator_alloc_regions_under_lock() {
   ShenandoahHeapLocker locker(ShenandoahHeap::heap()->lock());
-  _mutator_allocator.reserve_alloc_regions();
+  _mutator_alloc.reserve_alloc_regions();
 }
 
 size_t ShenandoahAllocator::remnant_bytes(ShenandoahFreeSetPartitionId partition) const {
   switch (partition) {
-    case ShenandoahFreeSetPartitionId::Mutator:      return _mutator_allocator.remnant_bytes();
-    case ShenandoahFreeSetPartitionId::Collector:    return _collector_allocator.remnant_bytes();
-    case ShenandoahFreeSetPartitionId::OldCollector: return _old_collector_allocator.remnant_bytes();
+    case ShenandoahFreeSetPartitionId::Mutator:      return _mutator_alloc.remnant_bytes();
+    case ShenandoahFreeSetPartitionId::Collector:    return _collector_alloc.remnant_bytes();
+    case ShenandoahFreeSetPartitionId::OldCollector: return _old_collector_alloc.remnant_bytes();
     default:
       ShouldNotReachHere();
       return 0;

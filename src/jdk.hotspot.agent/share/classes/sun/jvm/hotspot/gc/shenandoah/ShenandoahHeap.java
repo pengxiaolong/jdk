@@ -93,22 +93,11 @@ public class ShenandoahHeap extends CollectedHeap {
     public long used() {
         Address globalFreeSetAddress = globalFreeSet.getValue(addr);
         ShenandoahFreeSet freeset = VMObjectFactory.newObject(ShenandoahFreeSet.class, globalFreeSetAddress);
-        // The free set stores raw used with each active CAS alloc region's entire remaining capacity
-        // pre-charged at reserve time. In-process readers subtract the still-unconsumed remnant (see
-        // ShenandoahFreeSet::corrected_used / alloc_region_correction); mirror that here so the SA
-        // reports the same used as the live MemoryMXBean rather than an inflated value. The
-        // subtraction is saturating for the same reason it is in C++: the raw used is a snapshot
-        // while the per-region remnant is read live.
-        //
-        // The correction sums only the allocator's cached alloc regions (at most a handful of
-        // bounded stripe slots per partition), reached via the allocator rather than by walking
-        // every heap region, so used() stays O(slots) and does not regress to O(num_regions),
-        // which would make a jhsdb used() query crawl (and risk OOM) on a multi-TB heap.
+        // The free set pre-charges each active CAS alloc region's remaining capacity as used; subtract
+        // the unconsumed remnant of the allocator's cached alloc regions, as ShenandoahFreeSet::global_used()
+        // does. Saturating, since raw used and the remnant are not read atomically. The allocator may not
+        // be installed yet (e.g. a core captured during VM initialization).
         long rawUsed = freeset.used();
-        // The allocator may not be installed yet (e.g. a core captured before ShenandoahHeap::_allocator
-        // is set), in which case allocator() is null and there are no cached alloc regions to correct for.
-        // Mirror the C++ guard in ShenandoahFreeSet::alloc_region_correction (allocator == nullptr ? 0 : ...)
-        // so 'jhsdb jmap --heap' on such a core reports raw used instead of throwing NullPointerException.
         ShenandoahAllocator allocator = allocator();
         long correction = allocator == null ? 0 : allocator.remnantBytes();
         return rawUsed > correction ? rawUsed - correction : 0;

@@ -55,9 +55,9 @@ public class ShenandoahAllocator extends VMObject {
         Type type = db.lookupType("ShenandoahAllocator");
         // The partition allocators are embedded by value, so resolve their byte offsets and
         // construct the mirror at addr+offset (the per-value sub-object idiom used elsewhere in SA).
-        mutatorAllocatorOffset      = type.getField("_mutator_allocator").getOffset();
-        collectorAllocatorOffset    = type.getField("_collector_allocator").getOffset();
-        oldCollectorAllocatorOffset = type.getField("_old_collector_allocator").getOffset();
+        mutatorAllocatorOffset      = type.getField("_mutator_alloc").getOffset();
+        collectorAllocatorOffset    = type.getField("_collector_alloc").getOffset();
+        oldCollectorAllocatorOffset = type.getField("_old_collector_alloc").getOffset();
     }
 
     public ShenandoahAllocator(Address addr) {

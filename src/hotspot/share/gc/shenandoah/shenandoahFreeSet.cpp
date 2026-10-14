@@ -457,10 +457,6 @@ void ShenandoahFreeSet::unretire_alloc_region(ShenandoahFreeSetPartitionId parti
   }
 }
 
-void ShenandoahFreeSet::decrease_region_counts(ShenandoahFreeSetPartitionId partition, size_t regions) {
-  _partitions.decrease_region_counts(partition, regions);
-}
-
 template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahHeapRegion* ShenandoahFreeSet::find_region_for_alloc(size_t min_size_words, bool& in_new_region) {
   shenandoah_assert_heaplocked();
@@ -641,7 +637,8 @@ template uint32_t ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPart
 template uint32_t ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::Collector>(uint32_t, size_t, ShenandoahHeapRegion**);
 template uint32_t ShenandoahFreeSet::reserve_alloc_regions<ShenandoahFreeSetPartitionId::OldCollector>(uint32_t, size_t, ShenandoahHeapRegion**);
 
-ShenandoahHeapRegion* ShenandoahFreeSet::steal_from_mutator(ShenandoahFreeSetPartitionId target_partition) {
+ShenandoahHeapRegion* ShenandoahFreeSet::steal_from_mutator(ShenandoahFreeSetPartitionId target_partition,
+                                                            ShenandoahAllocRequest& req) {
   shenandoah_assert_heaplocked();
   assert(target_partition != ShenandoahFreeSetPartitionId::Mutator, "Cannot steal from self");
 
@@ -653,14 +650,14 @@ ShenandoahHeapRegion* ShenandoahFreeSet::steal_from_mutator(ShenandoahFreeSetPar
   for (idx_t idx = iterator.current(); iterator.has_next(); idx = iterator.next()) {
     ShenandoahHeapRegion* r = _heap->get_region(idx);
     if (can_allocate_from(r)) {
-      if (target_partition == ShenandoahFreeSetPartitionId::OldCollector) {
+      if (req.is_old()) {
         if (!flip_to_old_gc(r)) {
           continue;
         }
       } else {
         flip_to_gc(r);
       }
-      log_debug(gc, free)("Flipped region %zu from Mutator to %s", idx, partition_name(target_partition));
+      log_debug(gc, free)("Flipped region %zu to gc for request: " PTR_FORMAT, idx, p2i(&req));
 
       r->try_recycle_under_lock();
       assert(r->is_empty(), "Must be empty");
@@ -1042,7 +1039,7 @@ void ShenandoahRegionPartitions::retire_range_from_partition(
 size_t ShenandoahRegionPartitions::retire_from_partition(ShenandoahFreeSetPartitionId partition,
                                                          idx_t idx, size_t used_bytes) {
 
-  size_t remnant_bytes = 0;
+  size_t waste_bytes = 0;
   // Note: we may remove from free partition even if region is not entirely full, such as when available < PLAB::min_size()
   assert (idx < _max, "index is sane: %zu < %zu", idx, _max);
   assert (partition < NumPartitions, "Cannot remove from free partitions if not already free");
@@ -1050,14 +1047,18 @@ size_t ShenandoahRegionPartitions::retire_from_partition(ShenandoahFreeSetPartit
 
   if (used_bytes < _region_size_bytes) {
     // Count the alignment pad remnant of memory as used when we retire this region
-    remnant_bytes = _region_size_bytes - used_bytes;
-    increase_used(partition, remnant_bytes);
+    size_t fill_padding = _region_size_bytes - used_bytes;
+    waste_bytes = fill_padding;
+    increase_used(partition, fill_padding);
   }
-  decrease_region_counts(partition, 1);
   _membership[int(partition)].clear_bit(idx);
+  decrease_region_counts(partition, 1);
   shrink_interval_if_boundary_modified(partition, idx);
 
-  return remnant_bytes;
+  // This region is fully used, whether or not top() equals end().  It
+  // is retired and no more memory will be allocated from within it.
+
+  return waste_bytes;
 }
 
 void ShenandoahRegionPartitions::unretire_to_partition(ShenandoahHeapRegion* r, ShenandoahFreeSetPartitionId which_partition) {

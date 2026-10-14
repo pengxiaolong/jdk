@@ -280,10 +280,9 @@ private:
 
   Atomic<HeapWord*> _update_watermark;
 
-  Atomic<uint> _age;
+  uint _age;
   bool _promoted_in_place;
-  // Atomic like _age: updated on the lock-free retire path while read by marking workers.
-  CENSUS_NOISE(Atomic<uint> _youth;)
+  CENSUS_NOISE(uint _youth;)   // tracks epochs of retrograde ageing (rejuvenation)
 
   ShenandoahSharedFlag _recycling; // Used to indicate that the region is being recycled; see try_recycle*().
 
@@ -541,25 +540,24 @@ public:
   void set_affiliation(ShenandoahAffiliation new_affiliation);
 
   // Region ageing and rejuvenation
-  uint age() const { return _age.load_relaxed(); }
-  CENSUS_NOISE(uint youth() const { return _youth.load_relaxed(); })
+  uint age() const { return _age; }
+  CENSUS_NOISE(uint youth() const { return _youth; })
 
   void increment_age() {
-    const uint current_age = age();
-    assert(current_age <= markWord::max_age, "Error");
-    if (current_age < markWord::max_age) {
-      const uint old = _age.compare_exchange(current_age, current_age + 1, memory_order_relaxed);
-      assert(old == current_age || old == 0u, "Only fail when any mutator reset the age.");
+    const uint max_age = markWord::max_age;
+    assert(_age <= max_age, "Error");
+    if (_age++ >= max_age) {
+      _age = max_age;   // clamp
     }
   }
 
   void reset_age() {
     assert(get_top_before_promote() == nullptr, "Cannot reset age on region (%zu) scheduled for promotion", index());
-    CENSUS_NOISE(_youth.add_then_fetch(age(), memory_order_relaxed);)
-    _age.store_relaxed(0);
+    CENSUS_NOISE(_youth += _age;)
+    _age = 0;
   }
 
-  CENSUS_NOISE(void clear_youth() { _youth.store_relaxed(0u); })
+  CENSUS_NOISE(void clear_youth() { _youth = 0; })
 
   inline bool need_bitmap_reset() const {
     return _needs_bitmap_reset;
