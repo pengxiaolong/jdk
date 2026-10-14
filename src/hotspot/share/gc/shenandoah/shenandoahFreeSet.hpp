@@ -663,11 +663,12 @@ public:
   // Saturating precharged_used - remnant_bytes; see the comment on the net accessors in the .cpp.
   static size_t net_used(size_t precharged_used, size_t remnant_bytes);
 
-  // Raw used totals including the full CAS alloc-region pre-charge (no remnant subtraction).
-  // Stable under heap lock while mutators allocate; used by verify_before_rebuilding_free_set.
+  // Raw used totals including the full CAS alloc-region pre-charge; stable under heap lock.
   size_t young_used_raw() const { return _total_young_used; }
   size_t old_used_raw() const   { return _total_old_used; }
   size_t global_used_raw() const { return _total_global_used; }
+  // Mutator available excluding alloc-region remnant. Caller must hold heap lock.
+  size_t available_locked_raw() const { return _partitions.available_in(ShenandoahFreeSetPartitionId::Mutator); }
 
   // Return bytes used by old
   size_t old_used();

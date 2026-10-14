@@ -2674,10 +2674,11 @@ void ShenandoahFreeSet::compute_young_and_old_reserves(size_t young_trashed_regi
   old_available += old_trashed_regions * region_size_bytes;
   young_unaffiliated_regions += young_trashed_regions;
 
-  assert(young_capacity >= young_generation->used(),
-         "Young capacity (%zu) must exceed used (%zu)", young_capacity, young_generation->used());
+  // Raw used: stable while mutators CAS allocate, and alloc-region remnant can't be reserved.
+  const size_t young_used = young_used_raw();
+  assert(young_capacity >= young_used, "Young capacity (%zu) must exceed used (%zu)", young_capacity, young_used);
 
-  size_t young_available = young_capacity - young_generation->used();
+  size_t young_available = young_capacity - young_used;
   young_available += young_trashed_regions * region_size_bytes;
 
   assert(young_available >= young_unaffiliated_regions * region_size_bytes, "sanity");

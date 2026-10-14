@@ -424,9 +424,10 @@ void ShenandoahGenerationalHeap::compute_old_generation_balance(size_t mutator_x
 
   ShenandoahYoungGeneration* young_gen = young_generation();
   size_t young_capacity = young_gen->max_capacity();
-  size_t young_usage = young_gen->used(); // includes humongous waste
+  // Raw values: stable while mutators CAS allocate, and alloc-region remnant can't be reserved.
+  size_t young_usage = free_set()->young_used_raw(); // includes humongous waste
   size_t young_available = ((young_capacity >= young_usage)? young_capacity - young_usage: 0);
-  size_t freeset_available = free_set()->available_locked();
+  size_t freeset_available = free_set()->available_locked_raw();
   if (young_available > freeset_available) {
     young_available = freeset_available;
   }
