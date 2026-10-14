@@ -36,12 +36,13 @@ import sun.jvm.hotspot.utilities.Observer;
 
 // Mirror for ShenandoahPartitionAllocator<PARTITION>. Caches a striped array of alloc regions
 // (_alloc_regions[_alloc_region_count], each an Atomic<ShenandoahHeapRegion*>); a thread bumps a
-// region's atomic top lock-free. All three template instantiations (mutator, collector,
+// region's _top lock-free. All three template instantiations (mutator, collector,
 // old-collector) share an identical layout, so a single SA mirror reads any of them.
 public class ShenandoahPartitionAllocator extends VMObject {
     private static CIntegerField allocRegionCountField;
     private static long          allocRegionsBaseOffset;
     private static long          allocRegionPtrSize;
+    private static CIntegerField plabMinSizeField;
 
     static {
         VM.registerVMInitializedObserver(new Observer() {
@@ -58,6 +59,7 @@ public class ShenandoahPartitionAllocator extends VMObject {
         allocRegionsBaseOffset = type.getField("_alloc_regions[0]").getOffset();
         // Each slot is an Atomic<ShenandoahHeapRegion*>, whose storage is a single pointer.
         allocRegionPtrSize = VM.getVM().getAddressSize();
+        plabMinSizeField = db.lookupType("ShenandoahHeap").getCIntegerField("_plab_min_size");
     }
 
     public ShenandoahPartitionAllocator(Address addr) {
@@ -68,10 +70,10 @@ public class ShenandoahPartitionAllocator extends VMObject {
         return allocRegionCountField.getValue(addr);
     }
 
-    // Sum of the still-unconsumed pre-charged remnant across this partition's stripe slots. Mirrors
-    // ShenandoahPartitionAllocator::remnant_bytes: iterate the slots, and for each
-    // non-null cached region add its active-alloc-region remnant (end - top). O(slot count).
+    // Mirrors ShenandoahPartitionAllocator::remnant_bytes: sum of end - top over cached regions,
+    // skipping remnants below PLAB min size. O(slot count).
     public long remnantBytes() {
+        long minFreeBytes = plabMinSizeField.getValue() * VM.getVM().getHeapWordSize();
         long total = 0;
         long count = allocRegionCount();
         for (long i = 0; i < count; i++) {
@@ -81,7 +83,10 @@ public class ShenandoahPartitionAllocator extends VMObject {
                 continue;
             }
             ShenandoahHeapRegion region = VMObjectFactory.newObject(ShenandoahHeapRegion.class, regionAddr);
-            total += region.remnantBytes();
+            long remnant = region.remnantBytes();
+            if (remnant >= minFreeBytes) {
+                total += remnant;
+            }
         }
         return total;
     }

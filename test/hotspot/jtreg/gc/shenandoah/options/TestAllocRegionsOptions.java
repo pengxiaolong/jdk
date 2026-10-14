@@ -127,7 +127,7 @@ public class TestAllocRegionsOptions {
         assertEffectiveCountAtMost(4, 4,
                 "-Xmx256m");
 
-        // Aggressive heuristics exercises degenerated GC with active CAS alloc regions.
+        // Explicit maximum counts are honored with aggressive heuristics.
         assertEffectiveCount(32, 32,
                 "-Xmx2g", "-XX:ShenandoahRegionSize=256K",
                 "-XX:ShenandoahMutatorAllocRegions=32",

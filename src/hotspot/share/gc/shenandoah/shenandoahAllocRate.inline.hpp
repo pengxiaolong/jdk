@@ -27,7 +27,6 @@
 
 #include "gc/shenandoah/shenandoahAllocRate.hpp"
 
-#include "gc/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc/shenandoah/shenandoahStripedCounter.inline.hpp"
 #include "gc/shenandoah/shenandoahUtils.hpp"
 #include "logging/log.hpp"
@@ -53,19 +52,16 @@ inline void ShenandoahDecayAllocRate::task() {
 
 template<typename Clock>
 void ShenandoahAllocRate<Clock>::update_minimum_sample_size(const size_t available) {
-  const size_t min_sample_size = clamp(available / ALLOC_SAMPLE_PORTION, ShenandoahHeapRegion::region_size_bytes(), ALLOC_SAMPLE_MAX);
+  const size_t min_sample_size = clamp(available / ALLOC_SAMPLE_PORTION, ALLOC_SAMPLE_MIN, ALLOC_SAMPLE_MAX);
   log_info(gc, ergo)("Adjust minimum allocation sample size to: " PROPERFMT, PROPERFMTARGS(min_sample_size));
   set_minimum_sample_size(min_sample_size);
 }
 
 template<typename Clock>
 uint32_t ShenandoahAllocRate<Clock>::log_per_stripe_threshold_for(const size_t minimum_sample_size) const {
-  // Floor-log2 of the per-stripe share, clamped to a max-TLAB-sized floor: a smaller
-  // per-stripe threshold makes no sense as it triggers samples far too often. The floor
-  // never exceeds the minimum sample size itself.
-  const int log_threshold = log2i(minimum_sample_size) - static_cast<int>(_unsampled.log_num_stripes());
-  const size_t floor = MIN2(minimum_sample_size, ShenandoahHeapRegion::max_tlab_size_bytes());
-  return static_cast<uint32_t>(MAX2(log_threshold, log2i(floor)));
+  // Floor-log2 of the per-stripe share. Clamps to 0 for a 1-byte trigger.
+  const int log_threshold = log2i(minimum_sample_size) - (int) _unsampled.log_num_stripes();
+  return log_threshold > 0 ? (uint32_t) log_threshold : 0u;
 }
 
 template<typename Clock>

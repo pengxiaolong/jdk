@@ -154,7 +154,7 @@ public class TestCASAllocContention {
     // and so allocation rate doesn't blow past what GC can reclaim on slow CI hosts.
     static final long DURATION_NANOS = 5L * 1_000_000_000L;
 
-    // Object size: mix of small (TLAB) and medium (shared) allocations.
+    // Object sizes; TLAB allocations unless run with -XX:-UseTLAB, which covers the shared path.
     static final int[] SIZES = { 16, 64, 256, 1024 };
 
     // Cap threads so GC can keep up on small heaps. We want contention on the

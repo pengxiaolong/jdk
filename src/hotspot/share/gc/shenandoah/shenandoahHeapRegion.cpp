@@ -69,7 +69,6 @@ ShenandoahHeapRegion::ShenandoahHeapRegion(HeapWord* start, size_t index, bool c
   _tlab_allocs(0),
   _gclab_allocs(0),
   _plab_allocs(0),
-  _shared_atomic_allocs(0),
   _top_at_alloc_region_activation(nullptr),
   _live_data(0),
   _critical_pins(0),
@@ -365,7 +364,6 @@ void ShenandoahHeapRegion::reset_alloc_metadata() {
   _tlab_allocs = 0;
   _gclab_allocs = 0;
   _plab_allocs = 0;
-  _shared_atomic_allocs.store_relaxed(0);
 }
 
 size_t ShenandoahHeapRegion::get_shared_allocs() const {

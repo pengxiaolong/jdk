@@ -56,6 +56,7 @@ typedef ShenandoahPartitionAllocator<ShenandoahFreeSetPartitionId::OldCollector>
   volatile_nonstatic_field(ShenandoahHeap, _committed,             Atomic<size_t>)                            \
   static_field(ShenandoahHeapRegion, RegionSizeBytes,              size_t)                                    \
   static_field(ShenandoahHeapRegion, RegionSizeBytesShift,         size_t)                                    \
+  static_field(ShenandoahHeap, _plab_min_size,                     size_t)                                    \
   nonstatic_field(ShenandoahHeapRegion, _state,                    Atomic<ShenandoahHeapRegion::RegionState>) \
   nonstatic_field(ShenandoahHeapRegion, _index,                    size_t const)                              \
   nonstatic_field(ShenandoahHeapRegion, _bottom,                   HeapWord* const)                           \

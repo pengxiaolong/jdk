@@ -267,9 +267,6 @@ private:
   size_t _gclab_allocs;
   size_t _plab_allocs;
 
-  // Atomic counter (words) of shared CAS allocations during this activation.
-  // At retirement, growth minus this is attributed to LAB allocs by role.
-  Atomic<size_t> _shared_atomic_allocs;
   // Top when the region was activated as a CAS alloc region; protected by the heap lock.
   HeapWord* _top_at_alloc_region_activation;
 
@@ -523,7 +520,6 @@ public:
   }
 
   inline void adjust_alloc_metadata(const ShenandoahAllocRequest &req, size_t);
-  inline void adjust_alloc_metadata_atomic(const ShenandoahAllocRequest &req, size_t);
   void reset_alloc_metadata();
   size_t get_shared_allocs() const;
   size_t get_tlab_allocs() const;

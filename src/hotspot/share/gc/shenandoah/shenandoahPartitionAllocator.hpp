@@ -52,10 +52,6 @@ private:
   uint32_t const _alloc_region_count;       // power-of-two slot count
   uint32_t const _alloc_region_slot_mask;   // _alloc_region_count - 1
 
-  // Incremented on each batch replenish; threads that see a changed epoch after acquiring
-  // the heap lock know another thread already replenished and can retry without re-reserving.
-  volatile uint32_t _replenish_epoch;
-
   Atomic<ShenandoahHeapRegion*> _alloc_regions[MAX_ALLOC_REGIONS];
 
   uint32_t alloc_region_slot(Thread* thread);

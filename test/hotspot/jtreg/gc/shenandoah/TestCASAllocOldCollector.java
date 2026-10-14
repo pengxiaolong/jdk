@@ -36,13 +36,14 @@
 
 /*
  * @test id=many-collector-slots
- * @summary OldCollector path with maximum collector alloc region slots
+ * @summary OldCollector path with all 32 collector alloc region slots (heap_bound>=32)
  * @bug 8361099
  * @requires vm.gc.Shenandoah
+ * @requires os.maxMemory > 2G
  *
  * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions
- *      -XX:ShenandoahGCMode=generational -XX:ShenandoahCollectorAllocRegions=16
- *      -XX:+ShenandoahVerify -Xmx512m -Xms512m
+ *      -XX:ShenandoahGCMode=generational -XX:ShenandoahCollectorAllocRegions=32
+ *      -XX:ShenandoahRegionSize=256K -XX:+ShenandoahVerify -Xmx2g -Xms2g
  *      TestCASAllocOldCollector
  */
 

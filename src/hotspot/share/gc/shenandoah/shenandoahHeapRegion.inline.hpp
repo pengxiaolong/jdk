@@ -96,7 +96,6 @@ HeapWord* ShenandoahHeapRegion::allocate_atomic(ShenandoahAllocRequest& req, boo
     if (prev_top == obj) {
       // success
       req.set_actual_size(size);
-      adjust_alloc_metadata_atomic(req, size);
       ready_to_replenish = pointer_delta(end(), new_top) < min_free_words;
       return obj;
     }
@@ -157,12 +156,6 @@ inline void ShenandoahHeapRegion::adjust_alloc_metadata(const ShenandoahAllocReq
     default:
       assert(!req.is_lab_alloc(), "Unrecognized LAB allocation type");
       break;
-  }
-}
-
-inline void ShenandoahHeapRegion::adjust_alloc_metadata_atomic(const ShenandoahAllocRequest &req, size_t size) {
-  if (UseTLAB && !req.is_lab_alloc()) {
-    _shared_atomic_allocs.add_then_fetch(size, memory_order_relaxed);
   }
 }
 
@@ -278,19 +271,11 @@ inline void ShenandoahHeapRegion::unset_active_alloc_region() {
   if (current_top > top_at_activation) {
     reset_age();
     if (UseTLAB) {
-      // Fold this activation's growth into lab/shared totals. Must run before
-      // affiliation or the alloc region type is cleared.
-      const size_t growth_words = pointer_delta(current_top, top_at_activation);
-      const size_t shared_words = _shared_atomic_allocs.exchange(0);
+      // Attribute this activation's growth, including any shared CAS allocations, to the
+      // LAB type of the region's role. Must run before affiliation or role is cleared.
       size_t* lab_allocs = is_young() ? (is_gc_alloc_region() ? &_gclab_allocs : &_tlab_allocs)
-                            : &_plab_allocs;
-      const size_t lab_words = growth_words > shared_words ? growth_words - shared_words : 0;
-      *lab_allocs += lab_words;
-      if (shared_words > growth_words) {
-        log_debug(gc, free)("Region %zu: shared_atomic_allocs (%zu words) exceeded "
-                            "activation growth (%zu words) at retirement",
-                            index(), shared_words, growth_words);
-      }
+                                      : &_plab_allocs;
+      *lab_allocs += pointer_delta(current_top, top_at_activation);
     }
   }
   if (is_gc_alloc_region()) {

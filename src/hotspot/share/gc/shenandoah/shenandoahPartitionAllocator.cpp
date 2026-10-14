@@ -37,8 +37,7 @@ template<ShenandoahFreeSetPartitionId PARTITION>
 ShenandoahPartitionAllocator<PARTITION>::ShenandoahPartitionAllocator(ShenandoahFreeSet* free_set, uint32_t alloc_region_count)
   : _free_set(free_set),
     _alloc_region_count(clamped_alloc_region_count(alloc_region_count)),
-    _alloc_region_slot_mask(_alloc_region_count - 1u),
-    _replenish_epoch(0) {
+    _alloc_region_slot_mask(_alloc_region_count - 1u) {
   for (uint32_t i = 0; i < MAX_ALLOC_REGIONS; i++) {
     _alloc_regions[i].store_relaxed(nullptr);
   }
@@ -108,7 +107,6 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
   Thread* const thread = Thread::current();
   uint32_t const slot = alloc_region_slot(thread);
 
-  const uint32_t epoch_before = _replenish_epoch;
   uint32_t slots_ready_to_replenish = 0;
   // Fast path: lock-free CAS bump, try all alloc regions starting from this thread's slot.
   HeapWord* obj = try_allocate_in_alloc_regions<false>(req, in_new_region, slot, _alloc_region_count, slots_ready_to_replenish);
@@ -121,13 +119,11 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate(ShenandoahAllocReque
     ShenandoahHeap* const heap = ShenandoahHeap::heap();
     ShenandoahHeapLocker heap_locker(heap->lock(), req.is_mutator_alloc());
 
-    // Epoch advanced while we waited — another thread already replenished.
-    if (_replenish_epoch != epoch_before) {
-      slots_ready_to_replenish = 0; // Reset it for retry
-      obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot, _alloc_region_count, slots_ready_to_replenish);
-      if (obj != nullptr) {
-        return obj;
-      }
+    // Another thread may have replenished while we waited for the lock; rescan the slots.
+    slots_ready_to_replenish = 0;
+    obj = try_allocate_in_alloc_regions<true>(req, in_new_region, slot, _alloc_region_count, slots_ready_to_replenish);
+    if (obj != nullptr) {
+      return obj;
     }
 
     if constexpr (PARTITION == ShenandoahFreeSetPartitionId::OldCollector) {
@@ -308,9 +304,6 @@ uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32
       _alloc_regions[slot].release_store(r);
       replenished_count++;
     }
-  }
-  if (replenished_count > 0) {
-    _replenish_epoch++;
   }
   return replenished_count;
 }
