@@ -234,13 +234,10 @@ void ShenandoahDegenGC::op_degenerated() {
             heap->labs_make_parsable();
           }
 
-          // Must use top(), not plain_top(): degeneration at _degenerated_evac
-          // skips op_prepare_evacuation(), so CAS alloc regions are still active.
           for (size_t i = 0; i < heap->num_regions(); i++) {
             ShenandoahHeapRegion* r = heap->get_region(i);
-            HeapWord* region_top = r->top();
-            if (r->is_active() && region_top > r->get_update_watermark()) {
-              r->set_update_watermark_at_safepoint(region_top);
+            if (r->is_active() && r->top() > r->get_update_watermark()) {
+              r->set_update_watermark_at_safepoint(r->top());
             }
           }
         }

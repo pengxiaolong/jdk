@@ -590,11 +590,8 @@ uint32_t ShenandoahFreeSet::reserve_alloc_regions(uint32_t regions_to_reserve,
       }
       // Retire from the partition now; defer the partition-total recompute to the batch end.
       _partitions.retire_from_partition(PARTITION, idx, r->used());
-      // Flag must be set before activation (ordering contract); both before assert_bounds().
-      if constexpr (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-        r->set_gc_alloc_region(true);
-      }
-      r->set_active_alloc_region();
+      // Activate before assert_bounds().
+      r->set_active_alloc_region(PARTITION != ShenandoahFreeSetPartitionId::Mutator);
       reserved[reserved_count++] = r;
     }
   };
@@ -1657,7 +1654,7 @@ void ShenandoahFreeSet::add_promoted_in_place_region_to_old_collector(Shenandoah
   } else {
     if (available_in_region >= ShenandoahHeap::min_fill_size() * HeapWordSize) {
       size_t fill_words = available_in_region / HeapWordSize;
-      ShenandoahHeap::heap()->old_generation()->card_scan()->register_object(region->plain_top());
+      ShenandoahHeap::heap()->old_generation()->card_scan()->register_object(region->top());
       region->allocate_fill(fill_words);
     }
     available_in_region = 0;

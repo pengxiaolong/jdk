@@ -363,7 +363,7 @@ ShenandoahScanRemembered::process_region_slice(ShenandoahHeapRegion *region, siz
     // Since all LABs are retired at init mark, and since replacement LABs are allocated lazily, and since no
     // promotions occur until evacuation phase, TAMS for most recent young-gen is same as top().
     // Load top once to avoid TOCTOU with concurrent allocation.
-    HeapWord* const region_top = region->top_relaxed();
+    HeapWord* const region_top = region->top();
     if (end_of_range > region_top) {
       end_of_range = region_top;
     }

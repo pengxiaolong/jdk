@@ -718,11 +718,11 @@ public:
       // Check if region needs updating its TAMS. We have updated it already during concurrent
       // reset, so it is very likely we don't need to do another write here.  Since most regions
       // are not "active", this path is relatively rare.
-      if (_ctx->top_at_mark_start(r) != r->top_relaxed()) {
+      if (_ctx->top_at_mark_start(r) != r->top()) {
         _ctx->capture_top_at_mark_start(r);
       }
     } else {
-      assert(_ctx->top_at_mark_start(r) == r->top_relaxed(),
+      assert(_ctx->top_at_mark_start(r) == r->top(),
              "Region %zu should already have correct TAMS", r->index());
     }
   }

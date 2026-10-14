@@ -256,9 +256,11 @@ private:
   HeapWord* _coalesce_and_fill_boundary; // for old regions not selected as collection set candidates.
 
   // Frequently updated fields
-  HeapWord* volatile _top;
   shenandoah_padding(0);
-  Atomic<HeapWord*> _atomic_top; // non-null only while region is an active CAS alloc region.
+  // Bumped with CAS while the region is an active CAS alloc region. A CAS alloc region is never
+  // allocated from once it has less than PLAB::min_size() free, so an exhausted region can be
+  // released off-safepoint even though threads may still hold a stale reference to it.
+  HeapWord* volatile _top;
   shenandoah_padding(1);
 
   size_t _tlab_allocs;
@@ -268,6 +270,8 @@ private:
   // Atomic counter (words) of shared CAS allocations during this activation.
   // At retirement, growth minus this is attributed to LAB allocs by role.
   Atomic<size_t> _shared_atomic_allocs;
+  // Top when the region was activated as a CAS alloc region; protected by the heap lock.
+  HeapWord* _top_at_alloc_region_activation;
 
   Atomic<size_t> _live_data;
   Atomic<size_t> _critical_pins;
@@ -291,8 +295,13 @@ private:
   // This is only read/written by a gc worker to avoid unnecessary bitmap resets
   bool _needs_bitmap_reset;
 
-  // True while region is a collector CAS alloc region; read on the barrier fast path.
-  Atomic<bool> _gc_alloc_region;
+  // Role while the region is an active CAS alloc region; read on the barrier fast path.
+  enum AllocRegionType {
+    _not_alloc_region,
+    _mutator_alloc_region,
+    _gc_alloc_region
+  };
+  Atomic<AllocRegionType> _alloc_region_type;
 
 public:
   ShenandoahHeapRegion(HeapWord* start, size_t index, bool committed);
@@ -408,12 +417,12 @@ public:
   // Allocate fill after top
   inline HeapWord* allocate_fill(size_t word_size);
 
-  // Allocate object with CAS, return nullptr if full or not enough space for the req
-  template <bool HEAP_LOCKED>
+  // Allocate object with CAS, return nullptr if full or not enough space for the req.
+  // Never allocates once the region has less than PLAB::min_size() free.
   ALWAYSINLINE HeapWord* allocate_atomic(ShenandoahAllocRequest &req, bool& ready_to_replenish);
 
-  // Allocate lab with CAS, return nullptr if full or not enough space for the req
-  template <bool HEAP_LOCKED>
+  // Allocate lab with CAS, return nullptr if full or not enough space for the req.
+  // Never allocates once the region has less than PLAB::min_size() free.
   ALWAYSINLINE HeapWord* allocate_lab_atomic(ShenandoahAllocRequest &req, bool& ready_to_replenish);
 
   inline void clear_live_data();
@@ -489,49 +498,16 @@ public:
   // Find humongous start region that this region belongs to
   ShenandoahHeapRegion* humongous_start_region() const;
 
-  HeapWord* atomic_top() const {
-    return _atomic_top.load_acquire();
-  }
-
-  // Relaxed read: only used as the CAS expected operand; the CAS itself validates correctness.
-  HeapWord* atomic_top_relaxed() const {
-    return _atomic_top.load_relaxed();
-  }
-
-  // Returns _atomic_top if active (may advance concurrently), else stable _top.
-  // Only _atomic_top needs the acquire: null implies the preceding _top store is visible.
-  HeapWord* top() const {
-    HeapWord* at = atomic_top();
-    return at == nullptr ? AtomicAccess::load(&_top) : at;
-  }
-
-  // Relaxed top() for best-effort arithmetic readers (never dereference the result).
-  HeapWord* top_relaxed() const {
-    HeapWord* at = atomic_top_relaxed();
-    return at == nullptr ? AtomicAccess::load(&_top) : at;
-  }
-
-  // Plain read of _top; asserts the region is not active for CAS allocation.
-  HeapWord* plain_top() const {
-    assert(!is_atomic_alloc_region(),
-           "Region is active for CAS alloc; use top() for a concurrent snapshot");
-    return AtomicAccess::load(&_top);
-  }
+  // May advance concurrently while the region is an active CAS alloc region.
+  HeapWord* top() const         { return AtomicAccess::load(&_top); }
 
   void set_top(HeapWord* v) {
     assert(!is_atomic_alloc_region(), "Must not be an atomic alloc region");
-    _top = v;
+    AtomicAccess::store(&_top, v);
   }
 
-  HeapWord* new_top() const {
-    assert(atomic_top() == nullptr, "Must be");
-    return _new_top;
-  }
-
-  void set_new_top(HeapWord* v) {
-    assert(atomic_top() == nullptr, "Must be");
-    _new_top = v;
-  }
+  HeapWord* new_top() const     { return _new_top; }
+  void set_new_top(HeapWord* v) { _new_top = v;    }
 
   HeapWord* bottom() const      { return _bottom;  }
   HeapWord* end() const         { return _end;     }
@@ -541,7 +517,6 @@ public:
   size_t used_before_promote() const { return byte_size(bottom(), get_top_before_promote()); }
   size_t free() const           { return byte_size(top(),    end()); }
   size_t free_words() const     { return pointer_delta(end(), top()); }
-  size_t free_relaxed() const   { return byte_size(top_relaxed(), end()); }
 
   // Does this region contain this address?
   bool contains(HeapWord* p) const {
@@ -598,25 +573,22 @@ public:
     _needs_bitmap_reset = false;
   }
 
-  inline void set_active_alloc_region() {
+  inline void set_active_alloc_region(bool is_gc_alloc_region) {
     shenandoah_assert_heaplocked();
-    assert(atomic_top() == nullptr, "Must be");
-    _atomic_top.release_store(plain_top());
+    assert(!is_atomic_alloc_region(), "Must not be an atomic alloc region");
+    _top_at_alloc_region_activation = top();
+    _alloc_region_type.release_store(is_gc_alloc_region ? _gc_alloc_region : _mutator_alloc_region);
   }
 
   // Defined in shenandoahHeapRegion.inline.hpp (depends on ShenandoahHeap via is_young()).
-  inline bool unset_active_alloc_region();
+  inline void unset_active_alloc_region();
 
   bool is_atomic_alloc_region() const {
-    return atomic_top() != nullptr;
-  }
-
-  void set_gc_alloc_region(const bool is_gc_alloc_region) {
-    _gc_alloc_region.release_store(is_gc_alloc_region);
+    return _alloc_region_type.load_acquire() != _not_alloc_region;
   }
 
   bool is_gc_alloc_region() const {
-    return _gc_alloc_region.load_acquire();
+    return _alloc_region_type.load_acquire() == _gc_alloc_region;
   }
 
   // Self-forward accounting: set by an evacuating thread after it successfully

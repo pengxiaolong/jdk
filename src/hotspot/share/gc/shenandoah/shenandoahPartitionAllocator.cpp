@@ -78,7 +78,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_allocate_in_alloc_regions
     ShenandoahHeapRegion* r = HEAP_LOCKED ? _alloc_regions[i].load_relaxed() : _alloc_regions[i].load_acquire();
     if (r != nullptr) {
       bool ready_to_replenish = false;
-      HeapWord* obj = try_atomic_allocate_in<HEAP_LOCKED>(r, req, in_new_region, ready_to_replenish);
+      HeapWord* obj = try_atomic_allocate_in(r, req, in_new_region, ready_to_replenish);
       if (ready_to_replenish) {
         slots_ready_to_replenish++;
         if constexpr (HEAP_LOCKED) {
@@ -100,13 +100,7 @@ template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::uninstall_alloc_region(const uint32_t slot, ShenandoahHeapRegion* occupant) {
   assert(occupant != nullptr && _alloc_regions[slot].load_relaxed() == occupant, "Must be sane");
   _alloc_regions[slot].release_store(nullptr);
-
-  bool unset = occupant->unset_active_alloc_region();
-  assert(unset, "Should always succeed");
-  if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-    occupant->set_update_watermark(occupant->plain_top());
-    occupant->set_gc_alloc_region(false);
-  }
+  occupant->unset_active_alloc_region();
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
@@ -118,7 +112,7 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
   assert(_alloc_regions[slot].load_relaxed() == occupant, "Must be same");
 
   // Only install if the occupant is exhausted (or slot is empty).
-  if (occupant != nullptr && (occupant->free_relaxed() >> LogHeapWordSize) >= ShenandoahHeap::plab_min_size()) {
+  if (occupant != nullptr && occupant->free_words() >= ShenandoahHeap::plab_min_size()) {
     return false;
   }
 
@@ -129,21 +123,12 @@ bool ShenandoahPartitionAllocator<PARTITION>::try_install_alloc_region(const uin
          "Region must be made regular (or left pinned) by allocate_in before install");
   size_t remnant_bytes = _free_set->retire_region(PARTITION, new_region->index(), new_region->used());
   assert(remnant_bytes == _free_set->alloc_capacity(new_region), "Sanity check");
-  // gc_alloc_region flag must be visible before set_active_alloc_region publishes the region.
-  if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-    new_region->set_gc_alloc_region(true);
-  }
-  new_region->set_active_alloc_region();
+  new_region->set_active_alloc_region(PARTITION != ShenandoahFreeSetPartitionId::Mutator);
 
   _alloc_regions[slot].release_store(new_region);
 
   if (occupant != nullptr) {
-    bool unset = occupant->unset_active_alloc_region();
-    assert(unset, "Should always succeed");
-    if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-      occupant->set_update_watermark(occupant->plain_top());
-      occupant->set_gc_alloc_region(false);
-    }
+    occupant->unset_active_alloc_region();
   }
   return true;
 }
@@ -236,7 +221,7 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
   HeapWord* result = nullptr;
   if (req.is_lab_alloc()) {
     size_t adjusted_size = req.size();
-    size_t free = align_down((r->free_relaxed() >> LogHeapWordSize), MinObjAlignment);
+    size_t free = align_down(r->free_words(), MinObjAlignment);
     if (adjusted_size > free) {
       adjusted_size = free;
     }
@@ -251,18 +236,18 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
     req.set_actual_size(size);
   }
   assert(result != nullptr, "Allocation must succeed, region free: %zu, request minimal size: %zu",
-    r->free_relaxed(), req.is_lab_alloc() ? req.min_size() : req.size());
+    r->free(), req.is_lab_alloc() ? req.min_size() : req.size());
 
   if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
     assert(req.is_young(), "Mutator allocations always come from young generation.");
     _free_set->increase_partition_used(PARTITION, req.actual_size() * HeapWordSize);
   } else {
     assert(req.is_gc_alloc(), "Should be gc_alloc since req wasn't mutator alloc");
-    r->set_update_watermark(r->plain_top());
+    r->set_update_watermark(r->top());
     _free_set->increase_partition_used(PARTITION, (req.actual_size() + req.waste()) * HeapWordSize);
   }
 
-  if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
+  if (r->free_words() < ShenandoahHeap::plab_min_size()) {
     size_t idx = r->index();
     size_t waste_bytes = _free_set->retire_region(PARTITION, idx, r->used());
     if constexpr (PARTITION == ShenandoahFreeSetPartitionId::Mutator) {
@@ -276,16 +261,15 @@ HeapWord* ShenandoahPartitionAllocator<PARTITION>::allocate_in(ShenandoahHeapReg
 }
 
 template<ShenandoahFreeSetPartitionId PARTITION>
-template<bool HEAP_LOCKED>
 HeapWord* ShenandoahPartitionAllocator<PARTITION>::try_atomic_allocate_in(ShenandoahHeapRegion* r,
                                                                           ShenandoahAllocRequest& req,
                                                                           bool &in_new_region,
                                                                           bool& ready_to_replenish) {
   HeapWord* obj = nullptr;
   if (req.is_lab_alloc()) {
-    obj = r->allocate_lab_atomic<HEAP_LOCKED>(req, ready_to_replenish);
+    obj = r->allocate_lab_atomic(req, ready_to_replenish);
   } else {
-    obj = r->allocate_atomic<HEAP_LOCKED>(req, ready_to_replenish);
+    obj = r->allocate_atomic(req, ready_to_replenish);
   }
   if (obj != nullptr && obj == r->bottom()) {
     in_new_region = true;
@@ -308,7 +292,7 @@ uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32
     ShenandoahHeapRegion* const r = _alloc_regions[i].load_relaxed();
     if (r == nullptr) {
       empty_slots[empty_slots_count++] = i;
-    } else if ((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size()) {
+    } else if (r->free_words() < ShenandoahHeap::plab_min_size()) {
       uninstall_alloc_region(i, r);
       empty_slots[empty_slots_count++] = i;
     }
@@ -338,17 +322,13 @@ uint32_t ShenandoahPartitionAllocator<PARTITION>::replenish_alloc_regions(uint32
     if constexpr (HAS_PENDING_ALLOC_REQ) {
       if (*obj == nullptr) {
         bool ready_to_replenish = false;
-        *obj = try_atomic_allocate_in<true>(r, *req, *in_new_region, ready_to_replenish);
+        *obj = try_atomic_allocate_in(r, *req, *in_new_region, ready_to_replenish);
         if (*obj == nullptr || !ready_to_replenish) {
           _alloc_regions[slot].release_store(reserved[i]);
           replenished_count++;
         } else {
-          assert((r->free_relaxed() >> LogHeapWordSize) < ShenandoahHeap::plab_min_size(), "Must be");
+          assert(r->free_words() < ShenandoahHeap::plab_min_size(), "Must be");
           r->unset_active_alloc_region();
-          if (PARTITION != ShenandoahFreeSetPartitionId::Mutator) {
-            r->set_update_watermark(r->plain_top());
-            r->set_gc_alloc_region(false);
-          }
         }
       } else {
         _alloc_regions[slot].release_store(r);
@@ -387,6 +367,10 @@ void ShenandoahPartitionAllocator<PARTITION>::reserve_alloc_regions() {
   assert(empty_slots_count == alloc_region_count(), "Sanity");
 }
 
+// Returning a region with at least PLAB::min_size() free to the free set is only safe when no
+// thread can still allocate from it through a stale reference (e.g. at a safepoint, or for
+// collector regions once evacuation is off and all threads have observed it). Callers must not
+// release alloc regions otherwise; exhausted regions are uninstalled on the allocation path.
 template<ShenandoahFreeSetPartitionId PARTITION>
 void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint32_t slot) {
   shenandoah_assert_heaplocked();
@@ -396,7 +380,7 @@ void ShenandoahPartitionAllocator<PARTITION>::release_alloc_region(uint32_t slot
   }
 
   uninstall_alloc_region(slot, alloc_region);
-  if ((alloc_region->free_relaxed() >> LogHeapWordSize) >= ShenandoahHeap::plab_min_size()) {
+  if (alloc_region->free_words() >= ShenandoahHeap::plab_min_size()) {
     _free_set->unretire_alloc_region(PARTITION, alloc_region);
   }
 }

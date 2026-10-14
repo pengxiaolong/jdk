@@ -70,7 +70,7 @@ public class ShenandoahPartitionAllocator extends VMObject {
 
     // Sum of the still-unconsumed pre-charged remnant across this partition's stripe slots. Mirrors
     // ShenandoahPartitionAllocator::remnant_bytes: iterate the slots, and for each
-    // non-null cached region add its active-alloc-region remnant (end - atomic_top). O(slot count).
+    // non-null cached region add its active-alloc-region remnant (end - top). O(slot count).
     public long remnantBytes() {
         long total = 0;
         long count = allocRegionCount();

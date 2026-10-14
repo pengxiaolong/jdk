@@ -388,7 +388,7 @@ private:
   size_t _used, _committed, _garbage, _regions, _humongous_waste, _trashed_regions, _trashed_used;
   size_t _region_size_bytes, _min_free_size;
   // When true, count active CAS alloc regions as fully used (matching the partition's pre-charged
-  // raw used), avoiding _atomic_top reads that race with concurrent allocation off-safepoint.
+  // raw used), avoiding top() reads that race with concurrent allocation off-safepoint.
   bool _count_alloc_regions_as_full;
 public:
   explicit ShenandoahCalculateRegionStatsClosure(bool count_alloc_regions_as_full = false) :
@@ -402,7 +402,7 @@ public:
 
   void heap_region_do(ShenandoahHeapRegion* r) override {
     if (_count_alloc_regions_as_full && r->is_atomic_alloc_region()) {
-      // Off-safepoint: count whole region as used; free()/_atomic_top races with allocation.
+      // Off-safepoint: count whole region as used; free() races with allocation.
       _used += _region_size_bytes;
       _garbage += _region_size_bytes - r->get_live_data_bytes();
     } else if (r->is_cset() || r->is_trash()) {
@@ -1514,7 +1514,7 @@ void ShenandoahVerifier::verify_rem_set_before_update_ref() {
 
 void ShenandoahVerifier::verify_before_rebuilding_free_set() {
   // Not at a safepoint: count active CAS alloc regions as fully used and compare against the raw
-  // (uncorrected) freeset used totals so neither side races with concurrent _atomic_top bumps.
+  // (uncorrected) freeset used totals so neither side races with concurrent CAS top bumps.
   ShenandoahFreeSet* free_set = _heap->free_set();
   ShenandoahGenerationStatsClosure cl(true /* count_alloc_regions_as_full */);
   _heap->heap_region_iterate(&cl);

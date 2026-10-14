@@ -695,7 +695,7 @@ void ShenandoahOldGeneration::update_card_table() {
       // when the in-place-promotion is completed. Such a region may be used for additional
       // promotions in the same cycle it was itself promoted.
       // Load top once to avoid TOCTOU with concurrent allocation.
-      HeapWord* const region_top = region->top_relaxed();
+      HeapWord* const region_top = region->top();
       if (region_top > region->get_top_at_evac_start()) {
         _card_scan->update_card_table(region->get_top_at_evac_start(), region_top);
       }

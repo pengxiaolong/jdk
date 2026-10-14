@@ -66,10 +66,11 @@ ShenandoahHeapRegion::ShenandoahHeapRegion(HeapWord* start, size_t index, bool c
   _top_at_evac_start(start),
   _state(committed ? _empty_committed : _empty_uncommitted),
   _top(start),
-  _atomic_top(nullptr),
   _tlab_allocs(0),
   _gclab_allocs(0),
   _plab_allocs(0),
+  _shared_atomic_allocs(0),
+  _top_at_alloc_region_activation(nullptr),
   _live_data(0),
   _critical_pins(0),
   _mixed_candidate_garbage_words(0),
@@ -78,7 +79,8 @@ ShenandoahHeapRegion::ShenandoahHeapRegion(HeapWord* start, size_t index, bool c
 #ifdef SHENANDOAH_CENSUS_NOISE
   _youth(0),
 #endif // SHENANDOAH_CENSUS_NOISE
-  _needs_bitmap_reset(false)
+  _needs_bitmap_reset(false),
+  _alloc_region_type(_not_alloc_region)
   {
 
   assert(Universe::on_page_boundary(_bottom) && Universe::on_page_boundary(_end),

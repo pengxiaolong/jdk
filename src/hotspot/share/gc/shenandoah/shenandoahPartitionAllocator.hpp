@@ -73,7 +73,6 @@ private:
                         ShenandoahAllocRequest& req,
                         bool& retired_after_alloc);
 
-  template<bool HEAP_LOCKED>
   HeapWord* try_atomic_allocate_in(ShenandoahHeapRegion* r, ShenandoahAllocRequest& req, bool& in_new_region, bool& ready_to_replenish);
 
   void release_alloc_region(uint32_t slot);
@@ -102,7 +101,7 @@ public:
     uint32_t slot = alloc_region_slot(thread);
     ShenandoahHeapRegion* r = _alloc_regions[slot].load_relaxed();
     if (r != nullptr) {
-      size_t free_bytes = r->free_relaxed();
+      size_t free_bytes = r->free();
       if (free_bytes >= MinTLABSize) {
         return MIN2(free_bytes, ShenandoahHeapRegion::max_tlab_size_bytes());
       }
@@ -117,7 +116,7 @@ public:
     for (uint32_t i = 0; i < _alloc_region_count; i++) {
       ShenandoahHeapRegion* r = _alloc_regions[i].load_relaxed();
       if (r != nullptr) {
-        size_t free_bytes = r->free_relaxed();
+        size_t free_bytes = r->free();
         if (free_bytes >= min_free_bytes) {
           total += free_bytes;
         }

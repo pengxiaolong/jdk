@@ -825,7 +825,7 @@ private:
                                     const ShenandoahHeapRegion* r, HeapWord* start_of_range,
                                     HeapWord* end_of_range) const {
     // In case last object in my range spans boundary of my chunk, I may need to scan all the way to top()
-    ShenandoahObjectToOopBoundedClosure<T> objs(&cl, start_of_range, r->top_relaxed());
+    ShenandoahObjectToOopBoundedClosure<T> objs(&cl, start_of_range, r->top());
 
     // Any object that begins in a previous range is part of a different scanning assignment.  Any object that
     // starts after end_of_range is also not my responsibility.  (Either allocated during evacuation, so does
@@ -942,8 +942,6 @@ public:
     // be promoted.
     if (r->is_young() && r->is_active()) {
       HeapWord *tams = _ctx->top_at_mark_start(r);
-      // Must use top(), not plain_top(): active CAS alloc regions can be
-      // encountered here (final-update-refs safepoint or abbreviated cycles).
       HeapWord *top = r->top();
 
       // Allocations move the watermark when top moves.  However, compacting
